@@ -39,9 +39,14 @@ struct RootView: View {
                 }
                 .padding(18)
 
-                List(selection: $section) {
+                List {
                     ForEach(Section.allCases) { item in
-                        Label(item.rawValue, systemImage: item.icon).tag(item)
+                        Button {
+                            section = item
+                        } label: {
+                            Label(item.rawValue, systemImage: item.icon)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
                 .scrollContentBackground(.hidden)
