@@ -13,4 +13,4 @@ jobs:
       - name: Build native iOS app
         run: |
           set -o pipefail
-          xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,name=iPhone 16 Pro' CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
