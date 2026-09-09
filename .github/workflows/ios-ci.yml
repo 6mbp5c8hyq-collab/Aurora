@@ -13,4 +13,17 @@ jobs:
       - name: Build native iOS app
         run: |
           set -o pipefail
-          xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
+          xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: Package Simulator app
+        run: |
+          mkdir -p artifacts
+          ditto -c -k --sequesterRsrc --keepParent \
+            build/DerivedData/Build/Products/Debug-iphonesimulator/AURORA.app \
+            artifacts/AURORA-Simulator.app.zip
+      - name: Upload Simulator artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AURORA-iOS-Simulator
+          path: artifacts/AURORA-Simulator.app.zip
+          if-no-files-found: error
+          retention-days: 14
