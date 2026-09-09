@@ -1,0 +1,13 @@
+name: TestFlight Template
+on: { workflow_dispatch: {} }
+jobs:
+  prepare:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Apple signing requirements
+        run: |
+          echo "Add APPLE_TEAM_ID, BUNDLE_ID, ASC_KEY_ID, ASC_ISSUER_ID and ASC_PRIVATE_KEY secrets."
+          echo "Then archive with xcodebuild -allowProvisioningUpdates and your App Store Connect API key."

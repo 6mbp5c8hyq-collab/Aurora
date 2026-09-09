@@ -1,0 +1,88 @@
+import Foundation
+
+actor AURORAAPI {
+    enum APIError: LocalizedError {
+        case invalidResponse
+        case http(Int, String)
+        case missingJobID
+
+        var errorDescription: String? {
+            switch self {
+            case .invalidResponse: return "Invalid AURORA response"
+            case .http(let code, let body): return "AURORA HTTP \(code): \(body)"
+            case .missingJobID: return "AURORA did not return a job identifier"
+            }
+        }
+    }
+
+    private let session: URLSession
+
+    init() {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 90
+        config.timeoutIntervalForResource = 900
+        config.waitsForConnectivity = true
+        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        self.session = URLSession(configuration: config)
+    }
+
+    private func endpoint(_ path: String) -> URL {
+        URL(string: path, relativeTo: AppConfig.backend)!
+    }
+
+    private func call(_ path: String, method: String = "GET", body: JSONValue? = nil) async throws -> JSONValue {
+        var request = URLRequest(url: endpoint(path))
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = body.data()
+        }
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+        }
+        if data.isEmpty { return .object(["ok": .bool(true)]) }
+        return try JSONDecoder().decode(JSONValue.self, from: data)
+    }
+
+    func health() async throws -> JSONValue {
+        try await call("/api/health")
+    }
+
+    func validate(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/validate", method: "POST", body: payload)
+    }
+
+    func createJob(_ payload: JSONValue) async throws -> (String, JSONValue) {
+        let response = try await call("/api/jobs", method: "POST", body: payload)
+        guard let id = response.firstString(["job_id", "jobId", "id"]), !id.isEmpty else {
+            throw APIError.missingJobID
+        }
+        return (id, response)
+    }
+
+    func job(_ id: String) async throws -> JSONValue {
+        try await call("/api/jobs/\(id)")
+    }
+
+    func run(_ payload: JSONValue, onUpdate: @Sendable (JSONValue) async -> Void) async throws -> JSONValue {
+        _ = try await validate(payload)
+        let (id, created) = try await createJob(payload)
+        await onUpdate(created)
+        var latest = created
+
+        for _ in 0..<900 {
+            latest = try await job(id)
+            await onUpdate(latest)
+            let status = (latest.firstString(["status", "platform_status", "state"]) ?? "").lowercased()
+            let terminal = ["completed", "success", "succeeded", "failed", "error", "blocked", "cancelled"]
+            if terminal.contains(where: { status.contains($0) }) { return latest }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        return latest
+    }
+}
