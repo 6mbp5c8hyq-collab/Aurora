@@ -174,7 +174,7 @@ struct IndustrialSurfaceView: View {
                 case .ore: IndustrialOreDiagnosis(section: $section, project: activeProject)
                 case .process: IndustrialProcessSurface(section: $section, project: activeProject)
                 case .engines: IndustrialEngineExplorer(section: $section, project: activeProject)
-                case .engineering: EngineeringView()
+                case .engineering: EngineeringStudioView()
                 case .charts: IndustrialChartsSurface()
                 case .results: IndustrialResultsVault()
                 case .exports: IndustrialExportCenter(project: activeProject)
