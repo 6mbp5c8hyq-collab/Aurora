@@ -203,6 +203,27 @@ struct ProjectWorkspace: View {
                 }
 
                 AuroraCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Process Route").font(.headline)
+                            Spacer()
+                            Text("flowsheetJSON").font(.caption2.monospaced()).foregroundStyle(AuroraTheme.gold)
+                        }
+                        Text("Enter the ordered unit operations that become the native PFD and the canonical request.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $project.flowsheetJSON)
+                            .font(.caption.monospaced())
+                            .frame(minHeight: 140)
+                            .padding(8)
+                            .background(AuroraTheme.background, in: RoundedRectangle(cornerRadius: 12))
+                        Text(#"{ "units": ["Crushing", "Grinding", "Flotation"] }"#)
+                            .font(.caption2.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                AuroraCard {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Engineering Notes").font(.headline)
                         TextEditor(text: $project.notes).frame(minHeight: 100)
