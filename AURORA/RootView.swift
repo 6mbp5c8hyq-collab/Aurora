@@ -82,12 +82,12 @@ struct RootView: View {
             .padding(18)
 
             List {
-                Section("WORKSPACE") {
+                SwiftUI.Section("WORKSPACE") {
                     ForEach([Section.dashboard, Section.projects, Section.execution, Section.engines, Section.engineering, Section.deliverables], id: \.id) { item in
                         navigationRow(item)
                     }
                 }
-                Section("SYSTEM") {
+                SwiftUI.Section("SYSTEM") {
                     navigationRow(.settings)
                 }
             }
