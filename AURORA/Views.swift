@@ -189,7 +189,7 @@ struct ProjectWorkspace: View {
                         HStack {
                             Text("Ore & Analyses").font(.headline)
                             Spacer()
-                            Button("Import JSON / CSV") { importer = true }
+                            Button("Import PDF / Excel / CSV / JSON") { importer = true }
                         }
                         TextEditor(text: $project.analysesJSON)
                             .font(.caption.monospaced())
@@ -244,16 +244,56 @@ struct ProjectWorkspace: View {
         }
         .fileImporter(
             isPresented: $importer,
-            allowedContentTypes: [.json, .commaSeparatedText, .plainText]
+            allowedContentTypes: [.json, .commaSeparatedText, .plainText, .pdf, .spreadsheet]
         ) { result in
             do {
                 let url = try result.get()
                 let access = url.startAccessingSecurityScopedResource()
                 defer { if access { url.stopAccessingSecurityScopedResource() } }
-                project.analysesJSON = try String(contentsOf: url, encoding: .utf8)
-                message = "Imported \(url.lastPathComponent)"
-                project.updatedAt = .now
-                try? context.save()
+                let data = try Data(contentsOf: url)
+                let extensionName = url.pathExtension.lowercased()
+                if ["pdf", "xlsx", "xls", "csv"].contains(extensionName) {
+                    let filename = url.lastPathComponent
+                    Task { @MainActor in
+                        do {
+                            let response = try await AURORAAPI().importOre(data: data, filename: filename)
+                            guard case .object(let object) = response else {
+                                message = "The server returned an invalid import response."
+                                return
+                            }
+                            guard let recordsValue = object["records"],
+                                  case .array(let records) = recordsValue,
+                                  !records.isEmpty else {
+                                if let warningValue = object["warnings"],
+                                   case .array(let warnings) = warningValue {
+                                    message = warnings.compactMap { $0.stringValue }.joined(separator: " ")
+                                } else {
+                                    message = "No numeric ore records were found."
+                                }
+                                return
+                            }
+                            project.analysesJSON = JSONValue.object(["analyses": .array(records)]).prettyString()
+                            var warningText = ""
+                            if let warningValue = object["warnings"],
+                               case .array(let warnings) = warningValue {
+                                warningText = warnings.compactMap { $0.stringValue }.joined(separator: " ")
+                            }
+                            message = "Imported \(records.count) record(s) from \(filename). Review authority before running."
+                            if !warningText.isEmpty {
+                                message += " " + warningText
+                            }
+                            project.updatedAt = .now
+                            try? context.save()
+                        } catch {
+                            message = error.localizedDescription
+                        }
+                    }
+                } else {
+                    project.analysesJSON = try String(contentsOf: url, encoding: .utf8)
+                    message = "Imported \(url.lastPathComponent)"
+                    project.updatedAt = .now
+                    try? context.save()
+                }
             } catch {
                 message = error.localizedDescription
             }
