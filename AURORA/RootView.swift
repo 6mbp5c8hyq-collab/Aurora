@@ -83,7 +83,7 @@ struct RootView: View {
 
             List {
                 Section("WORKSPACE") {
-                    ForEach([Section.dashboard, .projects, .execution, .engines, .engineering, .deliverables]) { item in
+                    ForEach([Section.dashboard, Section.projects, Section.execution, Section.engines, Section.engineering, Section.deliverables], id: \.id) { item in
                         navigationRow(item)
                     }
                 }
