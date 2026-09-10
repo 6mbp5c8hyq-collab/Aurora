@@ -85,6 +85,14 @@ actor AURORAAPI {
         }
         return latest
     }
+    func importOre(data: Data, filename: String) async throws -> JSONValue {
+        let body = JSONValue.object([
+            "filename": .string(filename),
+            "content_base64": .string(data.base64EncodedString())
+        ])
+        return try await call("/api/imports/ore", method: "POST", body: body)
+    }
+
     func export(_ body: JSONValue, format: String) async throws -> (url: URL, name: String) {
         var request = URLRequest(url: endpoint("/api/exports"))
         request.httpMethod = "POST"
