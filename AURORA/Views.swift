@@ -280,7 +280,7 @@ struct ProjectWorkspace: View {
                             }
                             message = "Imported \(records.count) record(s) from \(filename). Review authority before running."
                             if !warningText.isEmpty {
-                                message += " " + warningText
+                                message = (message ?? "") + " " + warningText
                             }
                             project.updatedAt = .now
                             try? context.save()
