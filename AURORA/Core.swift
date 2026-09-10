@@ -143,6 +143,7 @@ final class AuroraProject {
     var targetGrade: Double
     var notes: String
     var analysesJSON: String
+    var flowsheetJSON: String
 
     init(
         name: String = "New AURORA Project",
@@ -161,10 +162,12 @@ final class AuroraProject {
         self.targetGrade = targetGrade
         self.notes = ""
         self.analysesJSON = "{}"
+        self.flowsheetJSON = "{\"units\":[]}"
     }
 
     var payload: JSONValue {
         let analyses = (try? JSONDecoder().decode(JSONValue.self, from: Data(analysesJSON.utf8))) ?? .object([:])
+        let flowsheet = (try? JSONDecoder().decode(JSONValue.self, from: Data(flowsheetJSON.utf8))) ?? .object(["units": .array([])])
         return .object([
             "project_id": .string(id.uuidString),
             "project_name": .string(name),
@@ -173,7 +176,8 @@ final class AuroraProject {
             "target_component": .string(targetComponent),
             "target_grade": .number(targetGrade),
             "notes": .string(notes),
-            "analyses": analyses
+            "analyses": analyses,
+            "flowsheet": flowsheet
         ])
     }
 }
