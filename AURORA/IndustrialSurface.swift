@@ -477,8 +477,8 @@ struct IndustrialInputWorkflow: View {
 struct IndustrialCommandCenter: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.modelContext) private var context
-    @Query(sort: \\AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
-    @Query(sort: \\RunRecord.updatedAt, order: .reverse) private var runs: [RunRecord]
+    @Query(sort: \AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
+    @Query(sort: \RunRecord.updatedAt, order: .reverse) private var runs: [RunRecord]
     @Binding var section: AuroraSurfaceSection
 
     private var project: AuroraProject? { projects.first }
