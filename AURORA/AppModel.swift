@@ -1,4 +1,5 @@
 import SwiftUI
+import Foundation
 import SwiftData
 
 @MainActor
@@ -16,6 +17,9 @@ final class AppModel: ObservableObject {
     @Published var runStatus = "Idle"
     @Published var isRunning = false
     @Published var lastError: String?
+    @Published var isExporting = false
+    @Published var lastExportURL: URL?
+    @Published var lastExportName: String?
 
     private let api = AURORAAPI()
 
@@ -31,7 +35,7 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func run(project: AuroraProject, context: ModelContext) {
+    func run(project: AuroraProject, context: ModelContext, module: String? = nil) {
         guard !isRunning else { return }
         isRunning = true
         lastError = nil
@@ -41,9 +45,11 @@ final class AppModel: ObservableObject {
         context.insert(record)
         try? context.save()
 
+        let executionPayload = executionPayload(for: project.payload, module: module)
+
         Task {
             do {
-                let final = try await api.run(project.payload) { [weak self] update in
+                let final = try await api.run(executionPayload) { [weak self] update in
                     await MainActor.run {
                         self?.activeResult = update
                         self?.runStatus = ResultTools.status(update)
@@ -75,4 +81,44 @@ final class AppModel: ObservableObject {
             isRunning = false
         }
     }
+    private func executionPayload(for base: JSONValue, module: String?) -> JSONValue {
+        guard let module, case .object(var fields) = base else { return base }
+        fields["runMode"] = .string("module")
+        fields["requested_module"] = .string(module)
+        fields["question"] = .string("Execute the selected governed AURORA engine and return evidence-bound outputs.")
+        return .object(fields)
+    }
+
+    func export(project: AuroraProject, format: String) {
+        guard !isExporting else { return }
+        isExporting = true
+        lastError = nil
+        let analyses = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.analysesJSON.utf8))) ?? .object([:])
+        let body = JSONValue.object([
+            "format": .string(format),
+            "filename": .string("AURORA_" + project.name),
+            "project": project.payload,
+            "designBasis": .object([
+                "target_component": .string(project.targetComponent),
+                "target_grade": .number(project.targetGrade)
+            ]),
+            "analyses": analyses,
+            "flowsheet": .object(["units": .array([])]),
+            "diagnostics": .array([]),
+            "result": activeResult ?? .object([:]),
+            "run": .object([:])
+        ])
+
+        Task {
+            do {
+                let file = try await api.export(body, format: format)
+                lastExportURL = file.url
+                lastExportName = file.name
+            } catch {
+                lastError = error.localizedDescription
+            }
+            isExporting = false
+        }
+    }
+
 }

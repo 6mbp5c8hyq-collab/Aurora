@@ -85,4 +85,36 @@ actor AURORAAPI {
         }
         return latest
     }
+    func export(_ body: JSONValue, format: String) async throws -> (url: URL, name: String) {
+        var request = URLRequest(url: endpoint("/api/exports"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+        guard let encoded = body.data() else { throw APIError.invalidResponse }
+        request.httpBody = encoded
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+        }
+
+        let fallback = "AURORA_Output." + (format == "bundle" ? "zip" : format)
+        let disposition = http.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let name = disposition
+            .split(separator: ";")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first(where: { $0.lowercased().hasPrefix("filename=") })?
+            .split(separator: "=", maxSplits: 1)
+            .last
+            .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: " \"")) }
+            ?? fallback
+
+        let target = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(name)
+        try data.write(to: target, options: .atomic)
+        return (target, name)
+    }
+
 }
