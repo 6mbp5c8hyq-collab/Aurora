@@ -128,11 +128,17 @@ struct IndustrialSurfaceView: View {
                 }
                 .padding(18)
 
-                List(selection: $section) {
+                List {
                     Section("CONTROL SURFACE") {
                         ForEach(AuroraSurfaceSection.allCases) { item in
-                            Label(item.rawValue, systemImage: item.icon)
-                                .tag(item)
+                            Button {
+                                section = item
+                            } label: {
+                                Label(item.rawValue, systemImage: item.icon)
+                                    .foregroundStyle(section == item ? AuroraTheme.accent : .primary)
+                            }
+                            .buttonStyle(.plain)
+                            .listRowBackground(section == item ? AuroraTheme.panel2 : Color.clear)
                         }
                     }
                 }
