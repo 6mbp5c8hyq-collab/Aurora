@@ -130,8 +130,8 @@ private extension AppModel {
         switch connection {
         case .unknown: return "Runtime unknown"
         case .checking: return "Runtime checking"
-        case .online: return "Runtime online"
-        case .offline: return "Runtime offline"
+        case .online(_): return "Runtime online"
+        case .offline(_): return "Runtime offline"
         }
     }
 }
