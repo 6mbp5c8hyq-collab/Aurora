@@ -94,6 +94,7 @@ final class AppModel: ObservableObject {
         isExporting = true
         lastError = nil
         let analyses = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.analysesJSON.utf8))) ?? .object([:])
+        let flowsheet = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.flowsheetJSON.utf8))) ?? .object(["units": .array([])])
         let body = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_" + project.name),
@@ -103,7 +104,7 @@ final class AppModel: ObservableObject {
                 "target_grade": .number(project.targetGrade)
             ]),
             "analyses": analyses,
-            "flowsheet": .object(["units": .array([])]),
+            "flowsheet": flowsheet,
             "diagnostics": .array([]),
             "result": activeResult ?? .object([:]),
             "run": .object([:])
