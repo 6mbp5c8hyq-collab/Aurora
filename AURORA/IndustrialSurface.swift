@@ -5,6 +5,7 @@ import Foundation
 
 enum AuroraSurfaceSection: String, CaseIterable, Identifiable, Hashable {
     case command = "Command Center"
+    case inputs = "Input Workflow"
     case ore = "Raw Ore Diagnosis"
     case process = "Process & PFD"
     case engines = "Engine Explorer"
@@ -20,6 +21,7 @@ enum AuroraSurfaceSection: String, CaseIterable, Identifiable, Hashable {
     var icon: String {
         switch self {
         case .command: return "square.grid.2x2.fill"
+        case .inputs: return "arrow.down.to.line.compact"
         case .ore: return "circle.hexagongrid.circle"
         case .process: return "arrow.triangle.branch"
         case .engines: return "cpu"
@@ -35,6 +37,7 @@ enum AuroraSurfaceSection: String, CaseIterable, Identifiable, Hashable {
     var subtitle: String {
         switch self {
         case .command: return "Live system overview"
+        case .inputs: return "Guided data intake"
         case .ore: return "Evidence, quality and problems"
         case .process: return "Route, streams and PFD"
         case .engines: return "Every canonical engine"
@@ -167,6 +170,7 @@ struct IndustrialSurfaceView: View {
             Group {
                 switch section {
                 case .command: IndustrialCommandCenter(section: $section)
+                case .inputs: IndustrialInputWorkflow(section: $section, project: activeProject)
                 case .ore: IndustrialOreDiagnosis(section: $section, project: activeProject)
                 case .process: IndustrialProcessSurface(section: $section, project: activeProject)
                 case .engines: IndustrialEngineExplorer(section: $section, project: activeProject)
@@ -243,14 +247,243 @@ struct IndustrialMetric: View {
     }
 }
 
+struct IndustrialInputStep: Identifiable {
+    let id: String
+    let title: String
+    let detail: String
+    let section: AuroraSurfaceSection
+    let isComplete: Bool
+}
+
+enum IndustrialInputSupport {
+    static func evidenceIsReady(_ project: AuroraProject?) -> Bool {
+        guard let project else { return false }
+        let raw = project.analysesJSON.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        guard raw.count > 4, raw != "{}", raw != "null" else { return false }
+        let hasMeasured = raw.contains("measured")
+        let hasOreMeasurement = raw.contains("xrf") || raw.contains("assay") || raw.contains("xrd") || raw.contains("mineral")
+        return hasMeasured && hasOreMeasurement
+    }
+
+    static func routeIsReady(_ project: AuroraProject?) -> Bool {
+        guard let project,
+              let data = project.flowsheetJSON.data(using: .utf8),
+              let value = try? JSONDecoder().decode(JSONValue.self, from: data),
+              let unitsValue = value.recursiveFind("units") else { return false }
+        if case .array(let units) = unitsValue { return !units.isEmpty }
+        return false
+    }
+
+    static func steps(for project: AuroraProject?) -> [IndustrialInputStep] {
+        let name = (project?.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let family = (project?.declaredFamily ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let component = (project?.targetComponent ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let identityReady = project != nil && !name.isEmpty && name.lowercased() != "new aurora project" && !family.isEmpty && (project?.feedTPH ?? 0) > 0
+        let basisReady = project != nil && !component.isEmpty && (project?.targetGrade ?? 0) > 0
+        return [
+            IndustrialInputStep(id: "identity", title: "Project identity", detail: "Name · ore family · feed rate", section: .project, isComplete: identityReady),
+            IndustrialInputStep(id: "basis", title: "Design target", detail: "Valuable component · target grade", section: .project, isComplete: basisReady),
+            IndustrialInputStep(id: "evidence", title: "Measured ore evidence", detail: "XRF · assay · XRD / mineralogy", section: .ore, isComplete: evidenceIsReady(project)),
+            IndustrialInputStep(id: "route", title: "Process route", detail: "Ordered units → native PFD", section: .process, isComplete: routeIsReady(project))
+        ]
+    }
+
+    static func ready(for project: AuroraProject?) -> Bool {
+        steps(for: project).allSatisfy { $0.isComplete }
+    }
+
+    static func nextStep(for project: AuroraProject?) -> IndustrialInputStep? {
+        steps(for: project).first(where: { !$0.isComplete })
+    }
+}
+
+struct IndustrialInputRail: View {
+    let steps: [IndustrialInputStep]
+    @Binding var section: AuroraSurfaceSection
+
+    private var nextID: String? {
+        steps.first(where: { !$0.isComplete })?.id
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Clear input path").font(.headline)
+                    Text("Project → design target → measured ore evidence → process route → run")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text("\(steps.filter(\.isComplete).count) / \(steps.count)")
+                    .font(.headline.monospaced())
+                    .foregroundStyle(steps.allSatisfy(\.isComplete) ? AuroraTheme.good : AuroraTheme.accent)
+            }
+
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 155), spacing: 10)], spacing: 10) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
+                    let isNext = nextID == step.id
+                    Button { section = step.section } label: {
+                        VStack(alignment: .leading, spacing: 7) {
+                            HStack {
+                                Text(String(format: "%02d", index + 1))
+                                    .font(.caption.bold().monospaced())
+                                    .foregroundStyle(step.isComplete ? AuroraTheme.background : AuroraTheme.accent)
+                                    .padding(7)
+                                    .background(step.isComplete ? AuroraTheme.good : isNext ? AuroraTheme.accent : AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 8))
+                                Spacer()
+                                Image(systemName: step.isComplete ? "checkmark.circle.fill" : isNext ? "arrow.right.circle.fill" : "circle")
+                                    .foregroundStyle(step.isComplete ? AuroraTheme.good : isNext ? AuroraTheme.accent : AuroraTheme.warn)
+                            }
+                            Text(step.title).font(.subheadline.bold()).foregroundStyle(.primary)
+                            Text(step.detail).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                            Text(step.isComplete ? "COMPLETE" : isNext ? "NEXT ACTION" : "REQUIRED")
+                                .font(.caption2.bold())
+                                .foregroundStyle(step.isComplete ? AuroraTheme.good : isNext ? AuroraTheme.accent : AuroraTheme.warn)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
+                        .padding(12)
+                        .background(step.isComplete ? AuroraTheme.good.opacity(0.10) : isNext ? AuroraTheme.accent.opacity(0.12) : AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 14))
+                        .overlay(RoundedRectangle(cornerRadius: 14).stroke(isNext ? AuroraTheme.accent.opacity(0.8) : .white.opacity(0.07), lineWidth: isNext ? 1.5 : 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack {
+                if let next = steps.first(where: { !$0.isComplete }) {
+                    Label("Next required action: \(next.title)", systemImage: "arrow.turn.down.right")
+                        .font(.caption.bold())
+                        .foregroundStyle(AuroraTheme.accent)
+                } else {
+                    Label("All input gates are complete. Review and run.", systemImage: "checkmark.shield.fill")
+                        .font(.caption.bold())
+                        .foregroundStyle(AuroraTheme.good)
+                }
+                Spacer()
+            }
+        }
+    }
+}
+
+struct IndustrialInputWorkflow: View {
+    @Binding var section: AuroraSurfaceSection
+    let project: AuroraProject?
+    @EnvironmentObject private var app: AppModel
+    @Environment(\.modelContext) private var context
+
+    private var steps: [IndustrialInputStep] { IndustrialInputSupport.steps(for: project) }
+    private var completed: Int { steps.filter(\.isComplete).count }
+    private var isReady: Bool { completed == steps.count }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                IndustrialHeader(eyebrow: "Controlled data intake", title: "Input Workflow", subtitle: "A guided admission path for the exact project, evidence and route payload sent to the canonical Railway runtime.")
+
+                HStack {
+                    Button { section = .command } label: { Label("Command Center", systemImage: "square.grid.2x2") }
+                    Button {
+                        if let next = IndustrialInputSupport.nextStep(for: project) { section = next.section }
+                        else if let project { app.run(project: project, context: context) }
+                    } label: {
+                        Label(isReady ? "Run Full AURORA" : "Continue input", systemImage: isReady ? "bolt.fill" : "arrow.right")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(app.isRunning)
+                }
+
+                AuroraCard {
+                    IndustrialInputRail(steps: steps, section: $section)
+                }
+
+                AuroraCard {
+                    VStack(alignment: .leading, spacing: 11) {
+                        HStack {
+                            Text("What enters the canonical request").font(.headline)
+                            Spacer()
+                            StatusBadge(text: isReady ? "Ready to execute" : "Inputs required")
+                        }
+                        Text("These four blocks are persisted with the project and are reviewed before any engine is called. Estimates stay qualified; they never replace measured ore evidence.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 175), spacing: 10)], spacing: 10) {
+                            Label("Identity: name, ore family, feed t/h", systemImage: "folder")
+                            Label("Design: target component and grade", systemImage: "scope")
+                            Label("Evidence: XRF/assay/XRD with MEASURED authority", systemImage: "waveform.path.ecg")
+                            Label("Route: flowsheetJSON units in process order", systemImage: "arrow.triangle.branch")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    }
+                }
+
+                AuroraCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Where to enter each item").font(.headline)
+                        Text("01 Project Setup → project basis and design target")
+                        Text("02 Project Setup → Ore & Analyses → paste or import JSON / CSV evidence")
+                        Text("03 Project Setup → Process Route → enter flowsheet JSON, for example:")
+                        Text(#"{ "units": ["Crushing", "Grinding", "Flotation"] }"#)
+                            .font(.caption.monospaced())
+                            .foregroundStyle(AuroraTheme.gold)
+                            .textSelection(.enabled)
+                        Text("04 Return here → confirm all four cards are green → Run Full AURORA")
+                            .font(.caption.bold())
+                            .foregroundStyle(AuroraTheme.accent)
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                }
+
+                AuroraCard {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("Live input inventory").font(.headline)
+                            Spacer()
+                            Text("\(completed) / \(steps.count) gates")
+                                .font(.caption.bold())
+                                .foregroundStyle(isReady ? AuroraTheme.good : AuroraTheme.warn)
+                        }
+                        LabeledContent("Project") { Text(project?.name ?? "No project").foregroundStyle(.secondary) }
+                        LabeledContent("Ore evidence") { Text(IndustrialInputSupport.evidenceIsReady(project) ? "Measured evidence detected" : "Not ready").foregroundStyle(IndustrialInputSupport.evidenceIsReady(project) ? AuroraTheme.good : AuroraTheme.warn) }
+                        LabeledContent("Process route") { Text(IndustrialInputSupport.routeIsReady(project) ? "Ordered units detected" : "Not configured").foregroundStyle(IndustrialInputSupport.routeIsReady(project) ? AuroraTheme.good : AuroraTheme.warn) }
+                        ProgressView(value: Double(completed), total: Double(steps.count))
+                            .tint(isReady ? AuroraTheme.good : AuroraTheme.accent)
+                    }
+                }
+
+                AuroraCard {
+                    VStack(alignment: .leading, spacing: 9) {
+                        Text("Admission result").font(.headline)
+                        if isReady {
+                            Label("All input gates are complete. You can run the full workflow or select one engine from Engine Explorer.", systemImage: "checkmark.shield.fill")
+                                .foregroundStyle(AuroraTheme.good)
+                        } else if let next = IndustrialInputSupport.nextStep(for: project) {
+                            Label("Complete \(next.title) next, then return here for review.", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(AuroraTheme.warn)
+                        }
+                        Button("Open Project Setup") { section = .project }
+                            .buttonStyle(.bordered)
+                    }
+                }
+            }
+            .padding(22)
+        }
+    }
+}
+
 struct IndustrialCommandCenter: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.modelContext) private var context
-    @Query(sort: \AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
-    @Query(sort: \RunRecord.updatedAt, order: .reverse) private var runs: [RunRecord]
+    @Query(sort: \\AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
+    @Query(sort: \\RunRecord.updatedAt, order: .reverse) private var runs: [RunRecord]
     @Binding var section: AuroraSurfaceSection
 
     private var project: AuroraProject? { projects.first }
+    private var inputSteps: [IndustrialInputStep] { IndustrialInputSupport.steps(for: project) }
+    private var inputReady: Bool { inputSteps.allSatisfy { $0.isComplete } }
     private var covered: Int {
         guard app.activeResult != nil else { return 0 }
         return auroraIndustrialEngines.filter { !IndustrialResultSupport.rows(for: $0, result: app.activeResult).isEmpty }.count
@@ -262,13 +495,16 @@ struct IndustrialCommandCenter: View {
                 IndustrialHeader(eyebrow: "AURORA control surface", title: "Command Center", subtitle: "One native surface for raw-ore diagnosis, process physics, engineering outputs and decisions.")
 
                 HStack(spacing: 10) {
+                    Button { section = .inputs } label: { Label("Input workflow", systemImage: "arrow.down.to.line.compact") }
+                        .buttonStyle(.borderedProminent)
                     Button { section = .project } label: { Label("Configure inputs", systemImage: "slider.horizontal.3") }
                     Button { section = .ore } label: { Label("Inspect ore", systemImage: "circle.hexagongrid.circle") }
                     Button {
-                        if let project { app.run(project: project, context: context) }
-                        else { section = .project }
+                        guard let project else { section = .inputs; return }
+                        if inputReady { app.run(project: project, context: context) }
+                        else { section = .inputs }
                     } label: {
-                        Label(app.isRunning ? "Running AURORA" : "Run Full AURORA", systemImage: "bolt.fill")
+                        Label(inputReady ? (app.isRunning ? "Running AURORA" : "Run Full AURORA") : "Complete input path", systemImage: inputReady ? "bolt.fill" : "exclamationmark.triangle")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(app.isRunning)
@@ -277,8 +513,12 @@ struct IndustrialCommandCenter: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], spacing: 10) {
                     IndustrialMetric(label: "ACTIVE PROJECT", value: project?.name ?? "None", detail: project?.declaredFamily.capitalized ?? "Awaiting basis", icon: "folder.fill", tint: AuroraTheme.accent)
                     IndustrialMetric(label: "CANONICAL RUNS", value: "\(runs.count)", detail: "saved locally", icon: "bolt.fill", tint: AuroraTheme.gold)
-                    IndustrialMetric(label: "OUTPUT FIELDS", value: "\(app.activeResult?.flattenedScalars(limit: 3000).count ?? 0)", detail: "returned scalar paths", icon: "list.number", tint: AuroraTheme.good)
+                    IndustrialMetric(label: "INPUT PATH", value: "\(inputSteps.filter { $0.isComplete }.count) / \(inputSteps.count)", detail: "gated steps complete", icon: "checklist", tint: inputReady ? AuroraTheme.good : AuroraTheme.warn)
                     IndustrialMetric(label: "ENGINE COVERAGE", value: "\(covered) / \(auroraIndustrialEngines.count)", detail: "engines with returned paths", icon: "cpu", tint: AuroraTheme.warn)
+                }
+
+                AuroraCard {
+                    IndustrialInputRail(steps: inputSteps, section: $section)
                 }
 
                 AuroraCard {
@@ -286,17 +526,17 @@ struct IndustrialCommandCenter: View {
                         HStack {
                             Text("Execution readiness").font(.headline)
                             Spacer()
-                            StatusBadge(text: project == nil ? "Inputs required" : "Admission controlled")
+                            StatusBadge(text: inputReady ? "Ready to execute" : "Inputs required")
                         }
-                        Text("The canonical runtime will refuse incomplete or unsupported evidence. Missing measurements remain visible as blockers.")
+                        Text("The same four-step input contract controls the native run button. Missing measurements and unsupported evidence stay visible as blockers.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        if project == nil {
-                            Label("Create a project and add measured ore evidence before running.", systemImage: "exclamationmark.triangle")
-                                .foregroundStyle(AuroraTheme.warn)
-                        } else {
-                            Label("Project basis is available. Complete the ore record and route in Project Setup if the runtime reports a gate.", systemImage: "checkmark.shield")
+                        if inputReady {
+                            Label("Project, design target, measured ore evidence and process route are present.", systemImage: "checkmark.shield.fill")
                                 .foregroundStyle(AuroraTheme.good)
+                        } else if let next = IndustrialInputSupport.nextStep(for: project) {
+                            Label("Complete \(next.title) next. Open the blue card in Input Workflow.", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundStyle(AuroraTheme.warn)
                         }
                     }
                 }
@@ -332,7 +572,7 @@ struct IndustrialCommandCenter: View {
                     ResultsPanel(result: result)
                 } else {
                     AuroraCard {
-                        ContentUnavailableView("No canonical run yet", systemImage: "waveform.path.ecg", description: Text("Run AURORA after entering a real project basis and measured ore evidence."))
+                        ContentUnavailableView("No canonical run yet", systemImage: "waveform.path.ecg", description: Text("Complete the input workflow, then run AURORA with real project and ore evidence."))
                     }
                 }
             }
@@ -345,13 +585,21 @@ struct IndustrialOreDiagnosis: View {
     @Binding var section: AuroraSurfaceSection
     let project: AuroraProject?
     @EnvironmentObject private var app: AppModel
+    @Environment(\.modelContext) private var context
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 IndustrialHeader(eyebrow: "Geometallurgy", title: "Raw Ore Diagnosis", subtitle: "Measured evidence, quality gates, derived descriptors and explicit problem register.")
                 HStack {
+                    Button { section = .inputs } label: { Label("Input workflow", systemImage: "arrow.down.to.line.compact") }
                     Button { section = .project } label: { Label("Open project inputs", systemImage: "slider.horizontal.3") }
+                    Button {
+                        if let project, IndustrialInputSupport.ready(for: project) { app.run(project: project, context: context, module: "ore_intelligence") }
+                        else { section = .inputs }
+                    } label: { Label("Run Ore Intelligence", systemImage: "play.fill") }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(app.isRunning)
                     Button { section = .exports } label: { Label("Export diagnosis", systemImage: "arrow.down.doc") }
                 }
 
@@ -412,7 +660,7 @@ struct IndustrialProcessSurface: View {
     @EnvironmentObject private var app: AppModel
     @Environment(\.modelContext) private var context
 
-    private let route = [
+    private let referenceRoute = [
         ("RAW ORE", "circle.hexagongrid.circle"),
         ("COMMINUTION", "gearshape.2"),
         ("CLASSIFICATION", "line.3.horizontal.decrease.circle"),
@@ -421,14 +669,28 @@ struct IndustrialProcessSurface: View {
         ("TAILINGS + WATER", "drop.triangle")
     ]
 
+    private var displayedRoute: [(String, String)] {
+        guard let project,
+              let data = project.flowsheetJSON.data(using: .utf8),
+              let value = try? JSONDecoder().decode(JSONValue.self, from: data),
+              let unitsValue = value.recursiveFind("units"),
+              case .array(let units) = unitsValue else { return referenceRoute }
+        let names = units.compactMap { $0.stringValue }.filter { !$0.isEmpty }
+        guard !names.isEmpty else { return referenceRoute }
+        return names.map { (String($0.prefix(24)).uppercased(), "circle.fill") }
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 IndustrialHeader(eyebrow: "Process architecture", title: "Process & PFD", subtitle: "A native process surface for route review, returned streams and engineering drawings.")
                 HStack {
+                    Button { section = .inputs } label: { Label("Input workflow", systemImage: "arrow.down.to.line.compact") }
                     Button {
-                        if let project { app.run(project: project, context: context) }
-                        else { section = .project }
+                        if let project {
+                            if IndustrialInputSupport.ready(for: project) { app.run(project: project, context: context) }
+                            else { section = .inputs }
+                        } else { section = .inputs }
                     } label: { Label("Run Full AURORA", systemImage: "bolt.fill") }
                         .buttonStyle(.borderedProminent)
                         .disabled(app.isRunning)
@@ -440,7 +702,7 @@ struct IndustrialProcessSurface: View {
                         HStack { Text("Route schematic").font(.headline); Spacer(); StatusBadge(text: app.activeResult == nil ? "Reference preview" : "Canonical result available") }
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 8) {
-                                ForEach(Array(route.enumerated()), id: \.offset) { index, item in
+                                ForEach(Array(displayedRoute.enumerated()), id: \.offset) { index, item in
                                     HStack(spacing: 8) {
                                         VStack(spacing: 7) {
                                             Image(systemName: item.1).font(.title3).foregroundStyle(AuroraTheme.accent)
@@ -448,7 +710,7 @@ struct IndustrialProcessSurface: View {
                                         }
                                         .frame(width: 112, height: 88)
                                         .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 14))
-                                        if index < route.count - 1 { Image(systemName: "arrow.right").foregroundStyle(AuroraTheme.gold) }
+                                        if index < displayedRoute.count - 1 { Image(systemName: "arrow.right").foregroundStyle(AuroraTheme.gold) }
                                     }
                                 }
                             }
@@ -512,8 +774,8 @@ struct IndustrialEngineExplorer: View {
                             VStack(alignment: .leading, spacing: 5) { Text(selected.name).font(.title2.bold()); Text("\(selected.group) · \(selected.description)").font(.subheadline).foregroundStyle(.secondary) }
                             Spacer()
                             Button {
-                                if let project { app.run(project: project, context: context, module: selected.id) }
-                                else { section = .project }
+                                if let project, IndustrialInputSupport.ready(for: project) { app.run(project: project, context: context, module: selected.id) }
+                                else { section = .inputs }
                             } label: { Label("Run engine", systemImage: "play.fill") }
                                 .buttonStyle(.borderedProminent)
                                 .disabled(app.isRunning)
