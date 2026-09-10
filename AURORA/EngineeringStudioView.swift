@@ -3,7 +3,7 @@ import SwiftData
 
 struct EngineeringStudioView: View {
     @EnvironmentObject private var app: AppModel
-    @Query(sort: \\AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
+    @Query(sort: \AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
     @State private var tab: DrawingTab = .pfd
     @State private var zoom: CGFloat = 1.0
     @State private var selectedNodeID: String?
