@@ -18,6 +18,8 @@ final class AppModel: ObservableObject {
     @Published var runStatus = "Idle"
     @Published var isRunning = false
     @Published var isLoadingStoredRun = false
+    @Published var validationResult: JSONValue?
+    @Published var isValidating = false
     @Published var lastError: String?
     @Published var isExporting = false
     @Published var lastExportURL: URL?
@@ -72,6 +74,21 @@ final class AppModel: ObservableObject {
            !id.isEmpty,
            let latest = try? await api.dagRun(id) {
             activate(latest, id: id, origin: "Restored from Result Vault")
+        }
+    }
+
+    func validate(project: AuroraProject) {
+        guard !isValidating else { return }
+        isValidating = true
+        lastError = nil
+        validationResult = nil
+        Task {
+            defer { isValidating = false }
+            do {
+                validationResult = try await api.validate(.object(["payload": project.payload]))
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
     }
 
