@@ -26,12 +26,25 @@ jobs:
             ((.status // .platform_status // .state // "") | type == "string")
           ' health.json
 
-      - name: Verify runtime audit contract
+      - name: Verify fast audit routing contract
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 3 --retry-delay 2 \
-            "$AURORA_BACKEND/api/audit" -o audit.json
-          echo "AURORA audit contract snapshot:"
+            "$AURORA_BACKEND/api/audit" -o audit-summary.json
+          jq -e '
+            (.ok == true) and
+            (.audit_status | type == "string") and
+            (.runtime.source_integrity_ready == true) and
+            (.runtime.scientific_runtime_ready == true) and
+            (.deep_audit_url == "/api/audit/deep")
+          ' audit-summary.json
+
+      - name: Verify deep runtime audit contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 2 --retry-delay 2 --max-time 300 \
+            "$AURORA_BACKEND/api/audit/deep" -o audit.json
+          echo "AURORA deep audit contract snapshot:"
           jq '{
             ok,
             audit_status,
@@ -57,10 +70,15 @@ jobs:
             dependency_gate_present: (.dependency_gate != null)
           }' audit.json
           jq -e '
+            (.ok == true) and
+            (.canonical_entrypoint | type == "string") and
+            (.dependency_gate != null) and
             (.engines.declared_count >= 1) and
             (.engines.declared | type == "array") and
             (.dag.declared_count >= 1) and
-            (.runtime != null)
+            (.dag.declared | type == "array") and
+            (.runtime.source_integrity_ready == true) and
+            (.runtime.scientific_runtime_ready == true)
           ' audit.json
 
       - name: Verify Result Vault contract
