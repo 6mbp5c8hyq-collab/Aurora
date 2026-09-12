@@ -55,7 +55,7 @@ struct RootView: View {
                 case .engines: EngineExplorerView()
                 case .balances: ProcessBalanceView()
                 case .engineering: EngineeringStudioView()
-                case .deliverables: DeliverablesView()
+                case .deliverables: DeliverablesCenterView()
                 case .settings: SettingsView()
                 }
             }
