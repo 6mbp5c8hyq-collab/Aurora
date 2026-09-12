@@ -29,10 +29,10 @@ struct RootView: View {
 
         var description: String {
             switch self {
-            case .dashboard: return "Live project posture"
+            case .dashboard: return "Live runtime and vault posture"
             case .projects: return "Ore evidence and flowsheet"
             case .execution: return "Canonical governed run"
-            case .engines: return "One result per engine"
+            case .engines: return "Run and inspect every engine"
             case .engineering: return "PFD, P&ID and drawings"
             case .deliverables: return "PDF, Word, Excel and bundle"
             case .settings: return "Backend and diagnostics"
@@ -46,7 +46,7 @@ struct RootView: View {
         } detail: {
             Group {
                 switch section {
-                case .dashboard: DashboardView()
+                case .dashboard: CommandCenterView()
                 case .projects: ProjectsView()
                 case .execution: ExecutionView()
                 case .engines: EngineExplorerView()
