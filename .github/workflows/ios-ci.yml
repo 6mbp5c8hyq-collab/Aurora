@@ -26,6 +26,33 @@ jobs:
             ((.status // .platform_status // .state // "") | type == "string")
           ' health.json
 
+      - name: Verify optimized runtime and telemetry contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/telemetry/recent" -o telemetry.json
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/perf/probe" -o performance.json
+          jq -e '
+            (.ok == true) and
+            (.optimized_entrypoint == true) and
+            (.ui_revision | type == "string") and
+            (.export_queue | type == "object") and
+            (.export_queue.queued | type == "number") and
+            (.export_queue.working | type == "number") and
+            (.export_queue.ready | type == "number") and
+            (.export_queue.failed | type == "number")
+          ' telemetry.json
+          jq -e '
+            (.ok == true) and
+            (.optimized_entrypoint == true) and
+            (.revision | type == "string") and
+            (.jobs_ms | type == "number") and
+            (.dag_cold_ms | type == "number") and
+            (.dag_warm_ms | type == "number") and
+            (.backend | type == "string")
+          ' performance.json
+
       - name: Verify fast audit routing contract
         run: |
           set -euo pipefail
@@ -101,6 +128,20 @@ jobs:
             "$AURORA_BACKEND/api/jobs/recent" -o jobs.json
           jq -e '(.ok == true) and (.runs | type == "array")' dag.json
           jq -e '(.ok == true) and (.jobs | type == "array")' jobs.json
+
+      - name: Verify queued export API is installed
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --output export-queue.json --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            -d '{"format":"pdf"}' \
+            "$AURORA_BACKEND/api/exports/jobs")
+          test "$status" = "400"
+          jq -e '
+            (.ok == false) and
+            (.status == "export_queue_rejected") and
+            (.error | type == "string")
+          ' export-queue.json
 
   simulator-build:
     runs-on: macos-15
