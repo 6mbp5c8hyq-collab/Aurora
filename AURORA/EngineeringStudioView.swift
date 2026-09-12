@@ -4,27 +4,35 @@ import SwiftData
 struct EngineeringStudioView: View {
     @EnvironmentObject private var app: AppModel
     @Query(sort: \AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
+    @State private var selectedProjectID: UUID?
     @State private var tab: DrawingTab = .pfd
     @State private var zoom: CGFloat = 1.0
     @State private var selectedNodeID: String?
 
-    private var project: AuroraProject? { projects.first }
-    private var nodes: [DrawingNode] {
-        DrawingNode.from(project?.flowsheetJSON)
+    private var project: AuroraProject? {
+        if let selectedProjectID, let selected = projects.first(where: { $0.id == selectedProjectID }) { return selected }
+        return projects.first
     }
-    private var selectedNode: DrawingNode? {
-        nodes.first { $0.id == selectedNodeID }
+
+    private var runtimeTopology: RuntimeTopology {
+        RuntimeTopology.parse(result: app.activeResult, projectFlowsheet: project?.flowsheetJSON)
     }
+
+    private var nodes: [DrawingNode] { runtimeTopology.nodes }
+    private var streams: [EngineeringStream] { RuntimeTopology.streams(from: app.activeResult) }
+    private var selectedNode: DrawingNode? { nodes.first { $0.id == selectedNodeID } }
 
     enum DrawingTab: String, CaseIterable, Identifiable {
         case pfd = "PFD"
         case flowsheet = "Flowsheet"
+        case pid = "P&ID"
         case layout = "2D Layout"
         var id: String { rawValue }
         var icon: String {
             switch self {
             case .pfd: return "arrow.triangle.branch"
             case .flowsheet: return "rectangle.connected.to.line.below"
+            case .pid: return "slider.horizontal.3"
             case .layout: return "square.grid.3x3"
             }
         }
@@ -36,9 +44,8 @@ struct EngineeringStudioView: View {
                 hero
                 toolbar
                 drawingSurface
-                if let selectedNode {
-                    detailCard(selectedNode)
-                }
+                if let selectedNode { detailCard(selectedNode) }
+                engineeringAuthority
                 legend
             }
             .padding(22)
@@ -51,13 +58,7 @@ struct EngineeringStudioView: View {
             HStack(alignment: .top, spacing: 16) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [AuroraTheme.accent.opacity(0.85), AuroraTheme.gold.opacity(0.75)],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                        .fill(LinearGradient(colors: [AuroraTheme.accent.opacity(0.85), AuroraTheme.gold.opacity(0.75)], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 72, height: 72)
                     Image(systemName: "drafting compass")
                         .font(.system(size: 30, weight: .bold))
@@ -65,17 +66,17 @@ struct EngineeringStudioView: View {
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Engineering Studio").font(.largeTitle.bold())
-                    Text("Native PFD · process flowsheet · 2D equipment layout")
+                    Text("Runtime-linked PFD · flowsheet · P&ID schematic · 2D layout")
                         .font(.subheadline)
                         .foregroundStyle(AuroraTheme.accent)
-                    Text("Review the process architecture visually. Every node is derived from the project route; returned engineering files remain available from Export Center.")
+                    Text("Topology is taken from the active AURORA result when available. Project flowsheetJSON is used only as a declared design-basis fallback.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
-                    StatusBadge(text: app.activeResult == nil ? "Design mode" : "Result linked")
-                    Text("\(nodes.count) unit nodes")
+                    StatusBadge(text: runtimeTopology.isRuntime ? "Runtime topology" : "Project basis")
+                    Text("\(nodes.count) units · \(streams.count) streams")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                 }
@@ -101,20 +102,31 @@ struct EngineeringStudioView: View {
                         .buttonStyle(.plain)
                     }
                     Spacer()
-                    Text("ZOOM")
-                        .font(.caption2.bold())
-                        .foregroundStyle(.secondary)
-                    Slider(value: $zoom, in: 0.7...1.5)
-                        .frame(width: 110)
+                    Text("ZOOM").font(.caption2.bold()).foregroundStyle(.secondary)
+                    Slider(value: $zoom, in: 0.7...1.5).frame(width: 110)
                 }
-                HStack {
-                    Label(project?.name ?? "No project selected", systemImage: "folder.fill")
+
+                HStack(spacing: 12) {
+                    if projects.isEmpty {
+                        Label("No project", systemImage: "folder.badge.questionmark")
+                    } else {
+                        Picker(
+                            "Project",
+                            selection: Binding<UUID?>(
+                                get: { selectedProjectID ?? projects.first?.id },
+                                set: { selectedProjectID = $0; selectedNodeID = nil }
+                            )
+                        ) {
+                            ForEach(projects) { item in Text(item.name).tag(Optional(item.id)) }
+                        }
+                        .labelsHidden()
+                        .frame(maxWidth: 300)
+                    }
                     Spacer()
-                    Text("Source: project flowsheetJSON")
+                    Text(runtimeTopology.sourceLabel)
                         .font(.caption2.monospaced())
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(runtimeTopology.isRuntime ? AuroraTheme.good : AuroraTheme.gold)
                 }
-                .font(.caption)
             }
         }
     }
@@ -123,42 +135,38 @@ struct EngineeringStudioView: View {
         AuroraCard {
             VStack(alignment: .leading, spacing: 10) {
                 HStack {
-                    Text(tab.rawValue == "2D Layout" ? "2D equipment arrangement" : "Process route drawing")
-                        .font(.headline)
+                    Text(surfaceTitle).font(.headline)
                     Spacer()
-                    Text("SELECT NODE TO INSPECT")
+                    Text("SELECT EQUIPMENT TO INSPECT")
                         .font(.caption2.bold())
                         .foregroundStyle(AuroraTheme.gold)
                 }
+
                 if nodes.isEmpty {
                     ContentUnavailableView(
-                        "No route nodes defined",
+                        "No topology available",
                         systemImage: "rectangle.dashed",
-                        description: Text("Open Input Workflow and enter flowsheetJSON with an ordered units array.")
+                        description: Text("Run AURORA or define an ordered units array in the project flowsheet.")
                     )
                     .frame(maxWidth: .infinity, minHeight: 280)
                 } else {
                     ScrollView(.horizontal, showsIndicators: true) {
                         ZStack(alignment: .topLeading) {
-                            DrawingConnections(nodes: nodes, zoom: zoom, layout: tab == .layout)
-                            ForEach(nodes) { node in
-                                DrawingNodeCard(
-                                    node: node,
-                                    selected: selectedNodeID == node.id,
-                                    compact: tab == .layout
-                                ) {
+                            DrawingConnections(nodes: nodes, streams: streams, zoom: zoom, layout: tab == .layout, pid: tab == .pid)
+                            ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
+                                DrawingNodeCard(node: node, selected: selectedNodeID == node.id, compact: tab == .layout) {
                                     withAnimation(.easeInOut(duration: 0.18)) { selectedNodeID = node.id }
                                 }
                                 .position(
-                                    x: node.x(index: nodes.firstIndex(where: { $0.id == node.id }) ?? 0, zoom: zoom, layout: tab == .layout),
-                                    y: tab == .layout ? node.y : 150
+                                    x: node.x(index: index, zoom: zoom),
+                                    y: tab == .layout ? node.layoutY(index: index) : 155
                                 )
                             }
                         }
-                        .frame(width: max(CGFloat(nodes.count) * 190 * zoom, 680), height: tab == .layout ? 440 : 300)
+                        .frame(width: max(CGFloat(nodes.count) * 205 * zoom, 760), height: tab == .layout ? 470 : 320)
                         .padding(.horizontal, 18)
                     }
-                    Text(tab == .pfd ? "PFD mode: left-to-right material path with stream connectors." : tab == .flowsheet ? "Flowsheet mode: ordered unit operations and process links." : "2D mode: equipment blocks arranged for spatial review; final coordinates come from the engineering runtime when supplied.")
+                    Text(surfaceCaption)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -168,24 +176,57 @@ struct EngineeringStudioView: View {
 
     private func detailCard(_ node: DrawingNode) -> some View {
         AuroraCard {
-            HStack(alignment: .top, spacing: 14) {
-                Image(systemName: node.icon)
-                    .font(.title2)
-                    .foregroundStyle(AuroraTheme.accent)
-                    .frame(width: 42, height: 42)
-                    .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 12))
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(node.title).font(.title3.bold())
-                    Text(node.kind.uppercased()).font(.caption2.bold()).tracking(1.1).foregroundStyle(AuroraTheme.gold)
-                    Text(node.subtitle).font(.caption).foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .top, spacing: 14) {
+                    Image(systemName: node.icon)
+                        .font(.title2)
+                        .foregroundStyle(AuroraTheme.accent)
+                        .frame(width: 42, height: 42)
+                        .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 12))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(node.title).font(.title3.bold())
+                        Text(node.kind.uppercased()).font(.caption2.bold()).tracking(1.1).foregroundStyle(AuroraTheme.gold)
+                        Text(node.subtitle).font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusBadge(text: node.runtimeDerived ? "Runtime" : "Declared")
+                    Button { selectedNodeID = nil } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                Spacer()
-                Button {
-                    selectedNodeID = nil
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+
+                if !node.fields.isEmpty {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 220), spacing: 8)], spacing: 8) {
+                        ForEach(Array(node.fields.prefix(24).enumerated()), id: \.offset) { _, field in
+                            HStack(alignment: .top, spacing: 8) {
+                                Text(field.0).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                                Spacer(minLength: 8)
+                                Text(field.1).font(.caption2.monospaced()).multilineTextAlignment(.trailing).lineLimit(3)
+                            }
+                            .padding(8)
+                            .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 9))
+                        }
+                    }
                 }
-                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private var engineeringAuthority: some View {
+        AuroraCard {
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: runtimeTopology.isRuntime ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                    .foregroundStyle(runtimeTopology.isRuntime ? AuroraTheme.good : AuroraTheme.warn)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(runtimeTopology.isRuntime ? "Runtime engineering topology active" : "Declared-route schematic only")
+                        .font(.subheadline.bold())
+                    Text(runtimeTopology.isRuntime
+                         ? "Equipment and topology shown above were discovered in the active runtime result. Final EPC coordinates, pipe classes and instrument tags remain authoritative only when explicitly returned."
+                         : "The current drawing is generated from project route declarations. It must not be treated as a final PFD/P&ID/layout until the runtime returns governed engineering geometry and stream data.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
         }
     }
@@ -193,11 +234,60 @@ struct EngineeringStudioView: View {
     private var legend: some View {
         HStack(spacing: 18) {
             Label("Material path", systemImage: "arrow.right").foregroundStyle(AuroraTheme.accent)
-            Label("Selected equipment", systemImage: "scope").foregroundStyle(AuroraTheme.gold)
-            Label("Runtime geometry", systemImage: "checkmark.seal").foregroundStyle(AuroraTheme.good)
+            Label("Stream value", systemImage: "tag.fill").foregroundStyle(AuroraTheme.gold)
+            Label("Runtime-derived", systemImage: "checkmark.seal").foregroundStyle(AuroraTheme.good)
         }
         .font(.caption)
         .padding(.horizontal, 6)
+    }
+
+    private var surfaceTitle: String {
+        switch tab {
+        case .pfd: return "Process Flow Diagram"
+        case .flowsheet: return "Canonical process topology"
+        case .pid: return "P&ID schematic overlay"
+        case .layout: return "2D equipment arrangement"
+        }
+    }
+
+    private var surfaceCaption: String {
+        switch tab {
+        case .pfd: return "PFD mode: ordered process equipment with available runtime stream labels."
+        case .flowsheet: return "Flowsheet mode: unit-operation graph from runtime topology when available."
+        case .pid: return "P&ID mode: schematic process/instrument overlay only. Instrumentation is not invented when tags are absent."
+        case .layout: return "2D mode: schematic arrangement unless the runtime explicitly supplies governed equipment coordinates."
+        }
+    }
+}
+
+private struct RuntimeTopology {
+    let nodes: [DrawingNode]
+    let isRuntime: Bool
+    let sourceLabel: String
+
+    static func parse(result: JSONValue?, projectFlowsheet: String?) -> RuntimeTopology {
+        if let result {
+            let candidates = ["unit_operations", "equipment", "process_units", "unit_nodes", "nodes"]
+            for key in candidates {
+                if let value = result.recursiveFind(key) {
+                    let parsed = DrawingNode.fromRuntime(value)
+                    if !parsed.isEmpty {
+                        return RuntimeTopology(nodes: parsed, isRuntime: true, sourceLabel: "Source: active runtime · \(key)")
+                    }
+                }
+            }
+        }
+        return RuntimeTopology(nodes: DrawingNode.fromProject(projectFlowsheet), isRuntime: false, sourceLabel: "Source: project flowsheetJSON fallback")
+    }
+
+    static func streams(from result: JSONValue?) -> [EngineeringStream] {
+        guard let result else { return [] }
+        for key in ["streams", "process_streams", "stream_table", "material_streams", "stream_ledger"] {
+            guard let value = result.recursiveFind(key) else { continue }
+            let parsed = EngineeringStream.parse(value)
+            if !parsed.isEmpty { return parsed }
+        }
+        return []
     }
 }
 
@@ -207,39 +297,61 @@ private struct DrawingNode: Identifiable, Hashable {
     let kind: String
     let subtitle: String
     let icon: String
-    let y: CGFloat
+    let runtimeDerived: Bool
+    let fields: [(String, String)]
 
-    func x(index: Int, zoom: CGFloat, layout: Bool) -> CGFloat {
-        CGFloat(index) * 190 * zoom + 105
+    static func == (lhs: DrawingNode, rhs: DrawingNode) -> Bool { lhs.id == rhs.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    func x(index: Int, zoom: CGFloat) -> CGFloat { CGFloat(index) * 205 * zoom + 110 }
+    func layoutY(index: Int) -> CGFloat { 145 + CGFloat(index % 3) * 115 }
+
+    static func fromRuntime(_ value: JSONValue) -> [DrawingNode] {
+        switch value {
+        case .array(let items):
+            return items.enumerated().compactMap { parseRuntimeItem($0.element, index: $0.offset, hint: nil) }
+        case .object(let object):
+            if object.values.allSatisfy({ if case .object = $0 { return true }; return false }) {
+                return object.keys.sorted().enumerated().compactMap { index, key in
+                    guard let item = object[key] else { return nil }
+                    return parseRuntimeItem(item, index: index, hint: key)
+                }
+            }
+            if let single = parseRuntimeItem(value, index: 0, hint: nil) { return [single] }
+            return []
+        default: return []
+        }
     }
 
-    static func from(_ raw: String?) -> [DrawingNode] {
-        let fallback = ["Feed", "Crushing", "Grinding", "Classification", "Flotation", "Product"]
+    static func fromProject(_ raw: String?) -> [DrawingNode] {
         guard let raw, let data = raw.data(using: .utf8),
               let json = try? JSONDecoder().decode(JSONValue.self, from: data),
-              let value = json.recursiveFind("units"),
-              case .array(let items) = value, !items.isEmpty else {
-            return fallback.enumerated().map { make(title: $0.element, index: $0.offset) }
-        }
+              let value = json.recursiveFind("units"), case .array(let items) = value, !items.isEmpty else { return [] }
+
         return items.enumerated().compactMap { index, item in
-            let title: String
-            let kind: String
             switch item {
-            case .string(let text):
-                title = text
-                kind = "Unit operation"
+            case .string(let text): return make(title: text, kind: "Unit operation", index: index, runtime: false, fields: [])
             case .object(let object):
-                title = object["name"]?.stringValue ?? object["id"]?.stringValue ?? object["type"]?.stringValue ?? "Unit \(index + 1)"
-                kind = object["type"]?.stringValue ?? object["category"]?.stringValue ?? "Unit operation"
-            default:
-                return nil
+                let title = scalar(object, ["name", "id", "tag", "type"]) ?? "Unit \(index + 1)"
+                let kind = scalar(object, ["type", "category", "kind"]) ?? "Unit operation"
+                return make(title: title, kind: kind, index: index, runtime: false, fields: flatten(object))
+            default: return nil
             }
-            return make(title: title, kind: kind, index: index)
         }
     }
 
-    private static func make(title: String, kind: String = "Unit operation", index: Int) -> DrawingNode {
-        let lower = title.lowercased()
+    private static func parseRuntimeItem(_ item: JSONValue, index: Int, hint: String?) -> DrawingNode? {
+        guard case .object(let object) = item else {
+            if let text = item.stringValue { return make(title: text, kind: "Unit operation", index: index, runtime: true, fields: []) }
+            return nil
+        }
+        let title = hint ?? scalar(object, ["name", "id", "tag", "unit_id", "label", "type"]) ?? "Unit \(index + 1)"
+        let kind = scalar(object, ["type", "category", "kind", "unit_type", "model"]) ?? "Unit operation"
+        return make(title: title, kind: kind, index: index, runtime: true, fields: flatten(object))
+    }
+
+    private static func make(title: String, kind: String, index: Int, runtime: Bool, fields: [(String, String)]) -> DrawingNode {
+        let lower = (title + " " + kind).lowercased()
         let icon: String
         if lower.contains("grind") || lower.contains("mill") { icon = "gearshape.2.fill" }
         else if lower.contains("float") { icon = "bubbles.and.sparkles" }
@@ -247,22 +359,93 @@ private struct DrawingNode: Identifiable, Hashable {
         else if lower.contains("crush") { icon = "diamond.fill" }
         else if lower.contains("pump") { icon = "arrow.up.circle.fill" }
         else if lower.contains("tank") || lower.contains("thick") { icon = "cylinder.fill" }
+        else if lower.contains("filter") { icon = "line.3.horizontal.decrease.circle.fill" }
         else if lower.contains("product") || lower.contains("tail") { icon = "shippingbox.fill" }
         else { icon = "square.stack.3d.up.fill" }
-        return DrawingNode(id: "\(index)-\(title)", title: title, kind: kind, subtitle: "Process node \(index + 1) · governed by canonical route", icon: icon, y: 160 + CGFloat(index % 2) * 150)
+        return DrawingNode(
+            id: "\(runtime ? "runtime" : "project")-\(index)-\(title)",
+            title: title,
+            kind: kind,
+            subtitle: runtime ? "Runtime process node \(index + 1)" : "Declared process node \(index + 1)",
+            icon: icon,
+            runtimeDerived: runtime,
+            fields: fields
+        )
+    }
+
+    private static func scalar(_ object: [String: JSONValue], _ keys: [String]) -> String? {
+        for key in keys { if let value = object[key]?.stringValue, !value.isEmpty { return value } }
+        return nil
+    }
+
+    private static func flatten(_ object: [String: JSONValue]) -> [(String, String)] {
+        var output: [(String, String)] = []
+        for key in object.keys.sorted() {
+            guard let value = object[key] else { continue }
+            if let scalar = value.stringValue { output.append((key, scalar)) }
+            else if case .object(let nested) = value {
+                for nestedKey in nested.keys.sorted().prefix(8) {
+                    if let scalar = nested[nestedKey]?.stringValue { output.append(("\(key).\(nestedKey)", scalar)) }
+                }
+            }
+            if output.count >= 28 { break }
+        }
+        return output
+    }
+}
+
+private struct EngineeringStream: Identifiable {
+    let id: String
+    let name: String
+    let label: String
+
+    static func parse(_ value: JSONValue) -> [EngineeringStream] {
+        switch value {
+        case .array(let items): return items.enumerated().compactMap { parseItem($0.element, index: $0.offset, hint: nil) }
+        case .object(let object):
+            if object.values.allSatisfy({ if case .object = $0 { return true }; return false }) {
+                return object.keys.sorted().enumerated().compactMap { index, key in
+                    guard let item = object[key] else { return nil }
+                    return parseItem(item, index: index, hint: key)
+                }
+            }
+            if let one = parseItem(value, index: 0, hint: nil) { return [one] }
+            return []
+        default: return []
+        }
+    }
+
+    private static func parseItem(_ value: JSONValue, index: Int, hint: String?) -> EngineeringStream? {
+        guard case .object(let object) = value else { return nil }
+        let name = hint ?? first(object, ["name", "stream_name", "id", "tag", "label"]) ?? "S\(index + 1)"
+        let mass = first(object, ["mass_flow_tph", "mass_tph", "flow_tph", "solids_tph"])
+        let volume = first(object, ["volumetric_flow_m3_h", "volume_flow_m3_h", "flow_m3_h"])
+        let solids = first(object, ["solids_pct", "percent_solids", "solids_percent"])
+        var parts: [String] = []
+        if let mass { parts.append("\(mass) t/h") }
+        if let volume { parts.append("\(volume) m³/h") }
+        if let solids { parts.append("\(solids)% solids") }
+        return EngineeringStream(id: "\(index)-\(name)", name: name, label: parts.isEmpty ? name : "\(name) · " + parts.joined(separator: " · "))
+    }
+
+    private static func first(_ object: [String: JSONValue], _ keys: [String]) -> String? {
+        for key in keys { if let value = object[key]?.stringValue, !value.isEmpty { return value } }
+        return nil
     }
 }
 
 private struct DrawingConnections: View {
     let nodes: [DrawingNode]
+    let streams: [EngineeringStream]
     let zoom: CGFloat
     let layout: Bool
+    let pid: Bool
 
     var body: some View {
-        Canvas { context, size in
-            for index in 0..<(max(nodes.count - 1, 0)) {
-                let start = CGPoint(x: CGFloat(index) * 190 * zoom + 155, y: layout ? nodes[index].y : 150)
-                let end = CGPoint(x: CGFloat(index + 1) * 190 * zoom + 55, y: layout ? nodes[index + 1].y : 150)
+        Canvas { context, _ in
+            for index in 0..<max(nodes.count - 1, 0) {
+                let start = CGPoint(x: CGFloat(index) * 205 * zoom + 165, y: layout ? nodes[index].layoutY(index: index) : 155)
+                let end = CGPoint(x: CGFloat(index + 1) * 205 * zoom + 55, y: layout ? nodes[index + 1].layoutY(index: index + 1) : 155)
                 var path = Path()
                 path.move(to: start)
                 if layout {
@@ -271,13 +454,19 @@ private struct DrawingConnections: View {
                 } else {
                     path.addLine(to: end)
                 }
-                context.stroke(path, with: .color(AuroraTheme.accent.opacity(0.72)), style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                context.stroke(path, with: .color(AuroraTheme.accent.opacity(0.72)), style: StrokeStyle(lineWidth: pid ? 2 : 3, lineCap: .round, dash: pid ? [8, 4] : []))
+
                 let arrow = Path { p in
                     p.move(to: CGPoint(x: end.x - 9, y: end.y - 6))
                     p.addLine(to: end)
                     p.addLine(to: CGPoint(x: end.x - 9, y: end.y + 6))
                 }
                 context.stroke(arrow, with: .color(AuroraTheme.gold), style: StrokeStyle(lineWidth: 2, lineCap: .round))
+
+                if index < streams.count {
+                    let text = Text(streams[index].label).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundStyle(AuroraTheme.gold)
+                    context.draw(text, at: CGPoint(x: (start.x + end.x) / 2, y: min(start.y, end.y) - 18), anchor: .center)
+                }
             }
         }
         .allowsHitTesting(false)
@@ -293,27 +482,23 @@ private struct DrawingNodeCard: View {
     var body: some View {
         Button(action: action) {
             VStack(spacing: 8) {
-                Image(systemName: node.icon)
-                    .font(.title2.bold())
-                    .foregroundStyle(selected ? AuroraTheme.gold : AuroraTheme.accent)
-                Text(node.title)
-                    .font(.caption.bold())
-                    .lineLimit(2)
-                    .multilineTextAlignment(.center)
-                Text(node.kind)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Image(systemName: node.icon)
+                        .font(.title2.bold())
+                        .foregroundStyle(selected ? AuroraTheme.gold : AuroraTheme.accent)
+                    if node.runtimeDerived {
+                        Image(systemName: "checkmark.seal.fill").font(.caption2).foregroundStyle(AuroraTheme.good)
+                    }
+                }
+                Text(node.title).font(.caption.bold()).lineLimit(2).multilineTextAlignment(.center)
+                Text(node.kind).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
             }
-            .frame(width: compact ? 135 : 145, height: compact ? 102 : 112)
+            .frame(width: compact ? 140 : 150, height: compact ? 104 : 114)
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 17, style: .continuous)
                     .fill(selected ? AuroraTheme.gold.opacity(0.16) : AuroraTheme.panel2)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 17, style: .continuous)
-                            .stroke(selected ? AuroraTheme.gold : AuroraTheme.accent.opacity(0.28), lineWidth: selected ? 2 : 1)
-                    )
+                    .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(selected ? AuroraTheme.gold : Color.white.opacity(0.10), lineWidth: selected ? 2 : 1))
             )
         }
         .buttonStyle(.plain)
