@@ -66,23 +66,50 @@ enum ResultTools {
 
     static func stages(_ result: JSONValue?) -> [EngineStage] {
         guard let result else { return [] }
-        for key in ["execution_stages", "engine_trace", "stages", "execution", "pipeline", "orchestration"] {
-            guard let value = result.recursiveFind(key), case .array(let items) = value else { continue }
-            let stages = items.compactMap { item -> EngineStage? in
-                if case .object(let object) = item {
-                    let name = object["name"]?.stringValue
-                        ?? object["engine"]?.stringValue
-                        ?? object["stage"]?.stringValue
-                        ?? object["id"]?.stringValue
-                        ?? "AURORA stage"
-                    let status = object["status"]?.stringValue ?? object["state"]?.stringValue ?? "reported"
-                    let detail = object["detail"]?.stringValue ?? object["message"]?.stringValue
-                    return .init(name: name, status: status, detail: detail)
-                }
-                if let text = item.stringValue { return .init(name: text, status: "reported", detail: nil) }
-                return nil
+
+        func stage(from item: JSONValue, fallbackName: String = "AURORA stage") -> EngineStage? {
+            if case .object(let object) = item {
+                let name = object["name"]?.stringValue
+                    ?? object["engine"]?.stringValue
+                    ?? object["stage"]?.stringValue
+                    ?? object["id"]?.stringValue
+                    ?? fallbackName
+                let status = object["status"]?.stringValue ?? object["state"]?.stringValue ?? "reported"
+                let detail = object["detail"]?.stringValue
+                    ?? object["message"]?.stringValue
+                    ?? object["error"]?.stringValue
+                return .init(name: name, status: status, detail: detail)
             }
-            if !stages.isEmpty { return stages }
+            if let text = item.stringValue {
+                return .init(name: fallbackName == "AURORA stage" ? text : fallbackName, status: "reported", detail: fallbackName == "AURORA stage" ? nil : text)
+            }
+            return nil
+        }
+
+        for key in ["execution_stages", "engine_trace", "stages", "execution", "pipeline", "orchestration"] {
+            guard let value = result.recursiveFind(key) else { continue }
+
+            if case .array(let items) = value {
+                let parsed = items.compactMap { stage(from: $0) }
+                if !parsed.isEmpty { return parsed }
+            }
+
+            if case .object(let object) = value {
+                let canonicalOrder = ["input_admission", "ore_diagnosis", "process_graph", "engine_fanout", "result_vault"]
+                var keys: [String] = canonicalOrder.filter { object[$0] != nil }
+                keys.append(contentsOf: object.keys.filter { !canonicalOrder.contains($0) }.sorted())
+
+                let parsed = keys.compactMap { name -> EngineStage? in
+                    guard let item = object[name] else { return nil }
+                    let label = name
+                        .replacingOccurrences(of: "_", with: " ")
+                        .split(separator: " ")
+                        .map { $0.capitalized }
+                        .joined(separator: " ")
+                    return stage(from: item, fallbackName: label)
+                }
+                if !parsed.isEmpty { return parsed }
+            }
         }
         return []
     }
