@@ -9,6 +9,7 @@ struct RootView: View {
         case projects = "Input Workflow"
         case execution = "Run AURORA"
         case engines = "Engine Observatory"
+        case balances = "Stream & Balance"
         case engineering = "Engineering Studio"
         case deliverables = "Export Center"
         case settings = "Runtime Settings"
@@ -21,6 +22,7 @@ struct RootView: View {
             case .projects: return "folder.badge.gearshape"
             case .execution: return "play.circle.fill"
             case .engines: return "square.stack.3d.up.fill"
+            case .balances: return "arrow.left.arrow.right.square.fill"
             case .engineering: return "drafting compass"
             case .deliverables: return "archivebox.fill"
             case .settings: return "gearshape.2.fill"
@@ -33,6 +35,7 @@ struct RootView: View {
             case .projects: return "Ore evidence and flowsheet"
             case .execution: return "Canonical governed run"
             case .engines: return "Run and inspect every engine"
+            case .balances: return "Streams, conservation and closure"
             case .engineering: return "PFD, P&ID and drawings"
             case .deliverables: return "PDF, Word, Excel and bundle"
             case .settings: return "Backend and diagnostics"
@@ -50,7 +53,8 @@ struct RootView: View {
                 case .projects: ProjectsView()
                 case .execution: ExecutionView()
                 case .engines: EngineExplorerView()
-                case .engineering: EngineeringView()
+                case .balances: ProcessBalanceView()
+                case .engineering: EngineeringStudioView()
                 case .deliverables: DeliverablesView()
                 case .settings: SettingsView()
                 }
@@ -83,7 +87,15 @@ struct RootView: View {
 
             List {
                 SwiftUI.Section("WORKSPACE") {
-                    ForEach([Section.dashboard, Section.projects, Section.execution, Section.engines, Section.engineering, Section.deliverables], id: \.id) { item in
+                    ForEach([
+                        Section.dashboard,
+                        Section.projects,
+                        Section.execution,
+                        Section.engines,
+                        Section.balances,
+                        Section.engineering,
+                        Section.deliverables
+                    ], id: \.id) { item in
                         navigationRow(item)
                     }
                 }
