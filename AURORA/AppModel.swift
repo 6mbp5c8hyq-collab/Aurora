@@ -14,8 +14,10 @@ final class AppModel: ObservableObject {
     @Published var connection: ConnectionState = .unknown
     @Published var activeResult: JSONValue?
     @Published var activeJobID: String?
+    @Published var activeResultOrigin = "No active result"
     @Published var runStatus = "Idle"
     @Published var isRunning = false
+    @Published var isLoadingStoredRun = false
     @Published var lastError: String?
     @Published var isExporting = false
     @Published var lastExportURL: URL?
@@ -64,14 +66,42 @@ final class AppModel: ObservableObject {
         }
 
         if recoverLatest,
+           activeResult == nil,
            let first = serverDagRuns.first,
            let id = first.firstString(["run_id", "runId", "id"]),
            !id.isEmpty,
            let latest = try? await api.dagRun(id) {
-            let display = normalized(latest)
-            activeResult = display
-            activeJobID = id
-            runStatus = ResultTools.status(display)
+            activate(latest, id: id, origin: "Restored from Result Vault")
+        }
+    }
+
+    func loadStoredDagRun(id: String) {
+        guard !id.isEmpty, !isLoadingStoredRun else { return }
+        isLoadingStoredRun = true
+        lastError = nil
+        Task {
+            defer { isLoadingStoredRun = false }
+            do {
+                let stored = try await api.dagRun(id)
+                activate(stored, id: id, origin: "Result Vault · DAG run")
+            } catch {
+                lastError = error.localizedDescription
+            }
+        }
+    }
+
+    func loadStoredJob(id: String) {
+        guard !id.isEmpty, !isLoadingStoredRun else { return }
+        isLoadingStoredRun = true
+        lastError = nil
+        Task {
+            defer { isLoadingStoredRun = false }
+            do {
+                let stored = try await api.job(id)
+                activate(stored, id: id, origin: "Result Vault · engine job")
+            } catch {
+                lastError = error.localizedDescription
+            }
         }
     }
 
@@ -79,6 +109,7 @@ final class AppModel: ObservableObject {
         guard !isRunning else { return }
         isRunning = true
         lastError = nil
+        activeResultOrigin = module == nil ? "Live canonical DAG" : "Live governed engine"
         runStatus = module == nil ? "Starting DAG" : "Validating module"
 
         let record = RunRecord(projectID: project.id)
@@ -123,6 +154,14 @@ final class AppModel: ObservableObject {
         }
     }
 
+    private func activate(_ value: JSONValue, id: String, origin: String) {
+        let display = normalized(value)
+        activeResult = display
+        activeJobID = id
+        activeResultOrigin = origin
+        runStatus = ResultTools.status(display)
+    }
+
     private func apply(update: JSONValue, to record: RunRecord, context: ModelContext) {
         let display = normalized(update)
         activeResult = display
@@ -148,6 +187,14 @@ final class AppModel: ObservableObject {
            let engineResult = object["result"] {
             object[requested] = engineResult
             object["active_engine"] = .string(requested)
+        }
+
+        if let result = object["result"],
+           object["requested_module"] == nil,
+           case .object(let resultObject) = result {
+            for (key, child) in resultObject where object[key] == nil {
+                object[key] = child
+            }
         }
 
         return .object(object)
@@ -187,7 +234,11 @@ final class AppModel: ObservableObject {
             "flowsheet": flowsheet,
             "diagnostics": .array([]),
             "result": activeResult ?? .object([:]),
-            "run": .object([:])
+            "run": .object([
+                "id": activeJobID.map(JSONValue.string) ?? .null,
+                "origin": .string(activeResultOrigin),
+                "status": .string(runStatus)
+            ])
         ])
 
         Task {
