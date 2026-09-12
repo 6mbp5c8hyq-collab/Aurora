@@ -3,6 +3,7 @@ import SwiftUI
 struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @State private var section: Section = .dashboard
+    @AppStorage("aurora.engine.workspace.selected") private var selectedEngineID = "ore_intelligence"
 
     enum Section: String, CaseIterable, Identifiable {
         case dashboard = "Command Center"
@@ -49,7 +50,7 @@ struct RootView: View {
             case .scenarios: return "Governed variants and run comparison"
             case .operations: return "Envelope, controls and twin state"
             case .vault: return "Recover persisted DAG and engine runs"
-            case .engines: return "Run and inspect every engine"
+            case .engines: return "Live matrix and per-engine workspaces"
             case .catalog: return "Runtime databases, models and references"
             case .results: return "Search every governed output path"
             case .balances: return "Streams, conservation and closure"
@@ -59,6 +60,32 @@ struct RootView: View {
             case .settings: return "Audit, gates and backend health"
             }
         }
+    }
+
+    private var sidebarEngines: [SidebarEngineItem] {
+        guard let audit = app.runtimeAudit,
+              let enginesValue = audit.recursiveFind("engines"),
+              case .object(let engineObject) = enginesValue,
+              let declaredValue = engineObject["declared"],
+              case .array(let declared) = declaredValue,
+              !declared.isEmpty else {
+            return SidebarEngineItem.fallback
+        }
+
+        var observed = Set<String>()
+        if let observedValue = engineObject["observed_in_completed_jobs"], case .array(let rows) = observedValue {
+            observed = Set(rows.compactMap { $0.stringValue })
+        }
+
+        let parsed = declared.compactMap { row -> SidebarEngineItem? in
+            guard case .object(let object) = row,
+                  let id = object["id"]?.stringValue,
+                  !id.isEmpty else { return nil }
+            let label = object["label"]?.stringValue
+                ?? id.replacingOccurrences(of: "_", with: " ").capitalized
+            return .init(id: id, title: label, observed: observed.contains(id))
+        }
+        return parsed.isEmpty ? SidebarEngineItem.fallback : parsed
     }
 
     var body: some View {
@@ -73,7 +100,7 @@ struct RootView: View {
                 case .scenarios: ScenarioOptimizationView()
                 case .operations: OperationsTwinView()
                 case .vault: ResultVaultBrowserView()
-                case .engines: EngineWorkspaceHubView()
+                case .engines: EngineWorkspaceNavigatorView(selectedEngineID: $selectedEngineID)
                 case .catalog: PlatformCatalogView()
                 case .results: ResultsExplorerView()
                 case .balances: ProcessBalanceView()
@@ -84,11 +111,15 @@ struct RootView: View {
                 }
             }
             .background(AuroraTheme.background.ignoresSafeArea())
-            .navigationTitle(section.rawValue)
+            .navigationTitle(section == .engines ? engineNavigationTitle : section.rawValue)
             .navigationBarTitleDisplayMode(.large)
         }
         .tint(AuroraTheme.accent)
         .task { app.checkHealth() }
+    }
+
+    private var engineNavigationTitle: String {
+        sidebarEngines.first(where: { $0.id == selectedEngineID })?.title ?? Section.engines.rawValue
     }
 
     private var sidebar: some View {
@@ -129,6 +160,13 @@ struct RootView: View {
                         navigationRow(item)
                     }
                 }
+
+                SwiftUI.Section("ENGINE WORKSPACES") {
+                    ForEach(sidebarEngines) { engine in
+                        engineNavigationRow(engine)
+                    }
+                }
+
                 SwiftUI.Section("SYSTEM") {
                     navigationRow(.settings)
                 }
@@ -136,7 +174,7 @@ struct RootView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
         }
-        .frame(minWidth: 260)
+        .frame(minWidth: 280)
         .background(AuroraTheme.background)
     }
 
@@ -165,6 +203,83 @@ struct RootView: View {
         .buttonStyle(.plain)
         .listRowBackground(section == item ? AuroraTheme.accent.opacity(0.12) : Color.clear)
     }
+
+    private func engineNavigationRow(_ engine: SidebarEngineItem) -> some View {
+        let selected = section == .engines && selectedEngineID == engine.id
+        return Button {
+            selectedEngineID = engine.id
+            withAnimation(.easeInOut(duration: 0.18)) { section = .engines }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: engine.icon)
+                    .frame(width: 21)
+                    .foregroundStyle(selected ? AuroraTheme.accent : .secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(engine.title)
+                        .font(.caption.weight(selected ? .semibold : .regular))
+                        .lineLimit(1)
+                    Text(engine.id)
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Circle()
+                    .fill(engine.observed ? AuroraTheme.good : (selected ? AuroraTheme.accent : Color.secondary.opacity(0.45)))
+                    .frame(width: 6, height: 6)
+            }
+            .padding(.vertical, 3)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(selected ? AuroraTheme.accent.opacity(0.12) : Color.clear)
+    }
+}
+
+private struct SidebarEngineItem: Identifiable {
+    let id: String
+    let title: String
+    let observed: Bool
+
+    var icon: String {
+        switch id {
+        case "ore_intelligence": return "cube.transparent"
+        case "resource_model": return "map"
+        case "comminution": return "gearshape.2"
+        case "classification": return "line.3.crossed.swirl.circle"
+        case "flotation": return "bubbles.and.sparkles"
+        case "magnetic_gravity": return "magnet"
+        case "hydrometallurgy": return "drop.triangle"
+        case "thermodynamics": return "flame"
+        case "water_circuit": return "drop"
+        case "conservation": return "arrow.triangle.2.circlepath"
+        case "equipment_epc": return "wrench.and.screwdriver"
+        case "economics": return "chart.line.uptrend.xyaxis"
+        case "tailings": return "exclamationmark.triangle"
+        case "digital_twin": return "dot.radiowaves.left.and.right"
+        case "hybrid_ai": return "brain.head.profile"
+        case "diagnostics": return "stethoscope"
+        default: return "cpu"
+        }
+    }
+
+    static let fallback: [SidebarEngineItem] = [
+        .init(id: "ore_intelligence", title: "Ore Intelligence", observed: false),
+        .init(id: "resource_model", title: "Resource & Mining", observed: false),
+        .init(id: "comminution", title: "Comminution", observed: false),
+        .init(id: "classification", title: "Classification", observed: false),
+        .init(id: "flotation", title: "Flotation", observed: false),
+        .init(id: "magnetic_gravity", title: "Magnetic & Gravity", observed: false),
+        .init(id: "hydrometallurgy", title: "Hydrometallurgy", observed: false),
+        .init(id: "thermodynamics", title: "Thermodynamics", observed: false),
+        .init(id: "water_circuit", title: "Water & Recycle", observed: false),
+        .init(id: "conservation", title: "Conservation & Reconciliation", observed: false),
+        .init(id: "equipment_epc", title: "Equipment & EPC", observed: false),
+        .init(id: "economics", title: "Economics", observed: false),
+        .init(id: "tailings", title: "Tailings & ESG", observed: false),
+        .init(id: "digital_twin", title: "Digital Twin", observed: false),
+        .init(id: "hybrid_ai", title: "Hybrid AI & Uncertainty", observed: false),
+        .init(id: "diagnostics", title: "Governance & Diagnostics", observed: false)
+    ]
 }
 
 private extension AppModel {
