@@ -12,6 +12,7 @@ struct RootView: View {
         case operations = "Operations & Digital Twin"
         case vault = "Result Vault"
         case engines = "Engine Observatory"
+        case catalog = "Data & Model Catalog"
         case results = "Results Explorer"
         case balances = "Stream & Balance"
         case evidence = "Evidence & QA"
@@ -30,6 +31,7 @@ struct RootView: View {
             case .operations: return "dot.radiowaves.left.and.right"
             case .vault: return "externaldrive.fill.badge.checkmark"
             case .engines: return "square.stack.3d.up.fill"
+            case .catalog: return "server.rack"
             case .results: return "magnifyingglass.circle.fill"
             case .balances: return "arrow.left.arrow.right.square.fill"
             case .evidence: return "checkmark.shield.fill"
@@ -48,6 +50,7 @@ struct RootView: View {
             case .operations: return "Envelope, controls and twin state"
             case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Run and inspect every engine"
+            case .catalog: return "Runtime databases, models and references"
             case .results: return "Search every governed output path"
             case .balances: return "Streams, conservation and closure"
             case .evidence: return "Provenance, validation and uncertainty"
@@ -71,6 +74,7 @@ struct RootView: View {
                 case .operations: OperationsTwinView()
                 case .vault: ResultVaultBrowserView()
                 case .engines: EngineWorkspaceHubView()
+                case .catalog: PlatformCatalogView()
                 case .results: ResultsExplorerView()
                 case .balances: ProcessBalanceView()
                 case .evidence: EvidenceCenterView()
@@ -115,6 +119,7 @@ struct RootView: View {
                         Section.operations,
                         Section.vault,
                         Section.engines,
+                        Section.catalog,
                         Section.results,
                         Section.balances,
                         Section.evidence,
