@@ -70,7 +70,7 @@ struct RootView: View {
                 case .scenarios: ScenarioOptimizationView()
                 case .operations: OperationsTwinView()
                 case .vault: ResultVaultBrowserView()
-                case .engines: EngineExplorerView()
+                case .engines: EngineWorkspaceHubView()
                 case .results: ResultsExplorerView()
                 case .balances: ProcessBalanceView()
                 case .evidence: EvidenceCenterView()
