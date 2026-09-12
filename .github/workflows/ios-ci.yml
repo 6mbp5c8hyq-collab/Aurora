@@ -31,6 +31,31 @@ jobs:
           set -euo pipefail
           curl --fail --silent --show-error --retry 3 --retry-delay 2 \
             "$AURORA_BACKEND/api/audit" -o audit.json
+          echo "AURORA audit contract snapshot:"
+          jq '{
+            ok,
+            audit_status,
+            canonical_entrypoint,
+            runtime: {
+              source_integrity_ready: .runtime.source_integrity_ready,
+              scientific_runtime_ready: .runtime.scientific_runtime_ready,
+              direct_dependency_runtime_ready: .runtime.direct_dependency_runtime_ready,
+              payload_member_count: .runtime.payload_member_count,
+              python_module_count: .runtime.python_module_count
+            },
+            engines: {
+              declared_count: .engines.declared_count,
+              declared_type: (.engines.declared | type),
+              observed_count: ((.engines.observed_in_completed_jobs // []) | length),
+              execution_state: .engines.execution_state
+            },
+            dag: {
+              declared_count: .dag.declared_count,
+              declared_type: (.dag.declared | type),
+              execution_state: .dag.execution_state
+            },
+            dependency_gate_present: (.dependency_gate != null)
+          }' audit.json
           jq -e '
             (.engines.declared_count >= 1) and
             (.engines.declared | type == "array") and
