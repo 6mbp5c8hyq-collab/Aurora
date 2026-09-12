@@ -61,8 +61,12 @@ actor AURORAAPI {
         try await call("/api/health")
     }
 
-    func audit() async throws -> JSONValue {
+    func auditSummary() async throws -> JSONValue {
         try await call("/api/audit")
+    }
+
+    func audit() async throws -> JSONValue {
+        try await call("/api/audit/deep")
     }
 
     func vaultStatus() async throws -> JSONValue {
