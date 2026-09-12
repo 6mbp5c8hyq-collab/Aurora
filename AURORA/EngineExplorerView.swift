@@ -1,8 +1,12 @@
 import SwiftUI
+import SwiftData
 
 struct EngineExplorerView: View {
     @EnvironmentObject private var app: AppModel
+    @Environment(\.modelContext) private var context
+    @Query(sort: \AuroraProject.updatedAt, order: .reverse) private var projects: [AuroraProject]
     @State private var selectedEngine: EngineDefinition?
+    @State private var selectedProjectID: UUID?
     @State private var query = ""
 
     private let engines: [EngineDefinition] = [
@@ -33,11 +37,20 @@ struct EngineExplorerView: View {
         }
     }
 
+    private var activeProject: AuroraProject? {
+        if let selectedProjectID,
+           let selected = projects.first(where: { $0.id == selectedProjectID }) {
+            return selected
+        }
+        return projects.first
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
                 traceStrip
+                executionBar
                 search
                 engineGrid
                 if let selectedEngine {
@@ -101,6 +114,52 @@ struct EngineExplorerView: View {
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    private var executionBar: some View {
+        AuroraCard {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Governed Engine Execution").font(.headline)
+                    Text("Runs the selected engine through canonical_mobile_execute using the selected project basis.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+
+                if projects.isEmpty {
+                    StatusBadge(text: "Create project first")
+                } else {
+                    Picker(
+                        "Project",
+                        selection: Binding<UUID?>(
+                            get: { selectedProjectID ?? projects.first?.id },
+                            set: { selectedProjectID = $0 }
+                        )
+                    ) {
+                        ForEach(projects) { project in
+                            Text(project.name).tag(Optional(project.id))
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: 260)
+
+                    Button {
+                        guard let engine = selectedEngine, let project = activeProject else { return }
+                        app.run(project: project, context: context, module: engine.key)
+                    } label: {
+                        if app.isRunning {
+                            ProgressView()
+                            Text("Running")
+                        } else {
+                            Label(selectedEngine == nil ? "Select Engine" : "RUN ENGINE", systemImage: "bolt.horizontal.fill")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(app.isRunning || selectedEngine == nil || activeProject == nil)
                 }
             }
         }
@@ -273,7 +332,7 @@ private struct EngineResultDetail: View {
                     ContentUnavailableView(
                         "No individual engine result yet",
                         systemImage: engine.icon,
-                        description: Text("Run the canonical workflow. If the engine is governed or blocked, that state and its reason will appear here.")
+                        description: Text("Select this engine and run it against a project. Governed or blocked states are returned explicitly by AURORA.")
                     )
                 }
             }
