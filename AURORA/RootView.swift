@@ -32,7 +32,7 @@ struct RootView: View {
         var description: String {
             switch self {
             case .dashboard: return "Live runtime and vault posture"
-            case .projects: return "Ore evidence and flowsheet"
+            case .projects: return "Ore evidence and process route"
             case .execution: return "Canonical governed run"
             case .engines: return "Run and inspect every engine"
             case .balances: return "Streams, conservation and closure"
@@ -50,7 +50,7 @@ struct RootView: View {
             Group {
                 switch section {
                 case .dashboard: CommandCenterView()
-                case .projects: ProjectsView()
+                case .projects: InputWorkflowView()
                 case .execution: ExecutionView()
                 case .engines: EngineExplorerView()
                 case .balances: ProcessBalanceView()
