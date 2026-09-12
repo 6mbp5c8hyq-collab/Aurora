@@ -8,6 +8,7 @@ struct RootView: View {
         case dashboard = "Command Center"
         case projects = "Input Workflow"
         case execution = "Run AURORA"
+        case scenarios = "Scenarios & Optimization"
         case vault = "Result Vault"
         case engines = "Engine Observatory"
         case balances = "Stream & Balance"
@@ -23,6 +24,7 @@ struct RootView: View {
             case .dashboard: return "square.grid.2x2.fill"
             case .projects: return "folder.badge.gearshape"
             case .execution: return "play.circle.fill"
+            case .scenarios: return "slider.horizontal.3"
             case .vault: return "externaldrive.fill.badge.checkmark"
             case .engines: return "square.stack.3d.up.fill"
             case .balances: return "arrow.left.arrow.right.square.fill"
@@ -38,6 +40,7 @@ struct RootView: View {
             case .dashboard: return "Live runtime and vault posture"
             case .projects: return "Ore evidence and process route"
             case .execution: return "Preflight and canonical governed run"
+            case .scenarios: return "Governed variants and run comparison"
             case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Run and inspect every engine"
             case .balances: return "Streams, conservation and closure"
@@ -58,6 +61,7 @@ struct RootView: View {
                 case .dashboard: CommandCenterView()
                 case .projects: InputWorkflowView()
                 case .execution: ExecutionControlView()
+                case .scenarios: ScenarioOptimizationView()
                 case .vault: ResultVaultBrowserView()
                 case .engines: EngineExplorerView()
                 case .balances: ProcessBalanceView()
@@ -99,6 +103,7 @@ struct RootView: View {
                         Section.dashboard,
                         Section.projects,
                         Section.execution,
+                        Section.scenarios,
                         Section.vault,
                         Section.engines,
                         Section.balances,
