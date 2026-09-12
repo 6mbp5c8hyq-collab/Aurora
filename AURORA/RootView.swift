@@ -8,6 +8,7 @@ struct RootView: View {
         case dashboard = "Command Center"
         case projects = "Input Workflow"
         case execution = "Run AURORA"
+        case vault = "Result Vault"
         case engines = "Engine Observatory"
         case balances = "Stream & Balance"
         case engineering = "Engineering Studio"
@@ -21,6 +22,7 @@ struct RootView: View {
             case .dashboard: return "square.grid.2x2.fill"
             case .projects: return "folder.badge.gearshape"
             case .execution: return "play.circle.fill"
+            case .vault: return "externaldrive.fill.badge.checkmark"
             case .engines: return "square.stack.3d.up.fill"
             case .balances: return "arrow.left.arrow.right.square.fill"
             case .engineering: return "drafting compass"
@@ -34,6 +36,7 @@ struct RootView: View {
             case .dashboard: return "Live runtime and vault posture"
             case .projects: return "Ore evidence and process route"
             case .execution: return "Canonical governed run"
+            case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Run and inspect every engine"
             case .balances: return "Streams, conservation and closure"
             case .engineering: return "PFD, P&ID and drawings"
@@ -52,6 +55,7 @@ struct RootView: View {
                 case .dashboard: CommandCenterView()
                 case .projects: InputWorkflowView()
                 case .execution: ExecutionView()
+                case .vault: ResultVaultBrowserView()
                 case .engines: EngineExplorerView()
                 case .balances: ProcessBalanceView()
                 case .engineering: EngineeringStudioView()
@@ -91,6 +95,7 @@ struct RootView: View {
                         Section.dashboard,
                         Section.projects,
                         Section.execution,
+                        Section.vault,
                         Section.engines,
                         Section.balances,
                         Section.engineering,
