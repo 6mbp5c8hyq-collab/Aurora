@@ -340,12 +340,40 @@ final class AppModel: ObservableObject {
         ])
     }
 
+    private func exportEvidence(from raw: JSONValue) -> JSONValue {
+        switch raw {
+        case .array:
+            return raw
+        case .object(let object):
+            for key in ["analyses", "evidence", "oreEvidence", "records"] {
+                if let value = object[key], case .array = value {
+                    return value
+                }
+            }
+            return .array([])
+        default:
+            return .array([])
+        }
+    }
+
+    private func exportDiagnostics(from result: JSONValue?) -> JSONValue {
+        guard let result else { return .array([]) }
+        for key in ["diagnostics", "warnings", "findings", "problem_register", "problems"] {
+            if let value = result.recursiveFind(key), case .array = value {
+                return value
+            }
+        }
+        return .array([])
+    }
+
     func export(project: AuroraProject, format: String) {
         guard !isExporting else { return }
         isExporting = true
         lastError = nil
-        let analyses = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.analysesJSON.utf8))) ?? .object([:])
+        let decodedAnalyses = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.analysesJSON.utf8))) ?? .array([])
+        let analyses = exportEvidence(from: decodedAnalyses)
         let flowsheet = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.flowsheetJSON.utf8))) ?? .object(["units": .array([])])
+        let diagnostics = exportDiagnostics(from: activeResult)
         let body = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_" + project.name),
@@ -356,7 +384,7 @@ final class AppModel: ObservableObject {
             ]),
             "analyses": analyses,
             "flowsheet": flowsheet,
-            "diagnostics": .array([]),
+            "diagnostics": diagnostics,
             "result": activeResult ?? .object([:]),
             "run": .object([
                 "id": activeJobID.map(JSONValue.string) ?? .null,
