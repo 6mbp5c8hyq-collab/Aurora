@@ -135,6 +135,26 @@ jobs:
             (.governance | type == "object")
           ' platform-databases.json
 
+      - name: Verify every engine resource filter contract
+        run: |
+          set -euo pipefail
+          test -s platform-capabilities.json
+          jq -r '.engines[].id' platform-capabilities.json | while IFS= read -r engine; do
+            test -n "$engine"
+            echo "checking resource linkage for $engine"
+            curl --fail --silent --show-error --retry 3 --retry-delay 1 \
+              --get --data-urlencode "engine=$engine" \
+              "$AURORA_BACKEND/api/platform/databases" -o engine-resources.json
+            jq -e --arg engine "$engine" '
+              (.ok == true) and
+              (.engine == $engine) and
+              (.count | type == "number") and
+              (.assets | type == "array") and
+              (all(.assets[]?; (.engine_links | type == "array") and ((.engine_links | index($engine)) != null))) and
+              (.governance | type == "object")
+            ' engine-resources.json
+          done
+
       - name: Verify Result Vault contract
         run: |
           set -euo pipefail
