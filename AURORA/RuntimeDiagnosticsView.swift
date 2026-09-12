@@ -11,6 +11,8 @@ struct RuntimeDiagnosticsView: View {
                 hero
                 endpointCard
                 readinessCard
+                optimizedRuntimeCard
+                performanceCard
                 vaultCard
                 recentJobsCard
                 rawAuditCard
@@ -37,9 +39,9 @@ struct RuntimeDiagnosticsView: View {
                 }
                 VStack(alignment: .leading, spacing: 5) {
                     Text("Runtime Diagnostics").font(.largeTitle.bold())
-                    Text("Health · dependency gates · canonical authority · Result Vault")
+                    Text("Health · optimized API · dependency gates · Result Vault")
                         .foregroundStyle(AuroraTheme.accent)
-                    Text("Direct view of the backend health/audit contracts used by the native application.")
+                    Text("Direct production view of the canonical runtime, fast API layer, export queue and persistent result authority used by this device.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -100,7 +102,7 @@ struct RuntimeDiagnosticsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Canonical Runtime Readiness").font(.headline)
-                        Text("Fields are read directly from /api/audit")
+                        Text("Scientific authority and dependency gates from the deep runtime audit")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -116,6 +118,74 @@ struct RuntimeDiagnosticsView: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 245), spacing: 9)], spacing: 9) {
                     ForEach(priorities, id: \.self) { key in
                         diagnosticTile(key: key, value: findAuditValue(key))
+                    }
+                }
+            }
+        }
+    }
+
+    private var optimizedRuntimeCard: some View {
+        AuroraCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Optimized API & Export Worker").font(.headline)
+                        Text("Live /api/telemetry/recent contract; verifies that the optimized layer is actually serving this device")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusBadge(text: optimizedRuntimeLabel)
+                }
+
+                if let telemetry = app.runtimeTelemetry {
+                    let fields = [
+                        "ui_revision",
+                        "optimized_entrypoint",
+                        "prepared_exports",
+                        "export_queue.queued",
+                        "export_queue.working",
+                        "export_queue.ready",
+                        "export_queue.failed"
+                    ]
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 9)], spacing: 9) {
+                        ForEach(fields, id: \.self) { field in
+                            diagnosticTile(key: field, value: value(in: telemetry, path: field))
+                        }
+                    }
+                } else {
+                    Text("Optimized telemetry is unavailable. Core health may still be online, but queued exports and the fast routing layer are not yet proven from this device.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    private var performanceCard: some View {
+        AuroraCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Runtime Performance Probe").font(.headline)
+                        Text("Result Vault access and DAG index latency measured by the production backend")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    if app.performanceSnapshot != nil { StatusBadge(text: "Measured") }
+                    else { StatusBadge(text: "Unavailable") }
+                }
+
+                if let performance = app.performanceSnapshot {
+                    let fields = [
+                        "revision", "optimized_entrypoint", "backend", "jobs_count", "jobs_ms",
+                        "dag_count", "dag_cold_ms", "dag_warm_ms", "dag_trace_index", "schema_initialized_once"
+                    ]
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 210), spacing: 9)], spacing: 9) {
+                        ForEach(fields, id: \.self) { field in
+                            diagnosticTile(key: field, value: value(in: performance, path: field))
+                        }
                     }
                 }
             }
@@ -226,14 +296,31 @@ struct RuntimeDiagnosticsView: View {
         let scientific = audit.firstString(["scientific_ready", "core_engine_native_ready"])
         if direct == "true" { return "Direct ready" }
         if scientific == "true" { return "Scientific ready" }
-        return audit.firstString(["status", "state"]) ?? "Reported"
+        return audit.firstString(["status", "state", "audit_status"]) ?? "Reported"
+    }
+
+    private var optimizedRuntimeLabel: String {
+        guard let telemetry = app.runtimeTelemetry else { return "Not proven" }
+        return value(in: telemetry, path: "optimized_entrypoint").lowercased() == "true" ? "Optimized active" : "Fallback / unknown"
     }
 
     private func findAuditValue(_ path: String) -> String {
         guard let audit = app.runtimeAudit else { return "—" }
-        if let direct = audit.recursiveFind(path)?.stringValue { return direct }
+        let exact = value(in: audit, path: path)
+        if exact != "—" { return exact }
         let last = path.split(separator: ".").last.map(String.init) ?? path
         return audit.recursiveFind(last)?.stringValue ?? "—"
+    }
+
+    private func value(in source: JSONValue, path: String) -> String {
+        var current: JSONValue? = source
+        for component in path.split(separator: ".").map(String.init) {
+            guard let node = current, case .object(let object) = node, let next = object[component] else {
+                return "—"
+            }
+            current = next
+        }
+        return current?.stringValue ?? "—"
     }
 
     private func diagnosticTile(key: String, value: String) -> some View {
