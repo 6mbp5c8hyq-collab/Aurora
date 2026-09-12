@@ -3,7 +3,62 @@ on:
   push:
     branches: [ main ]
   pull_request:
+
+concurrency:
+  group: aurora-ios-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  backend-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify health contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/health" -o health.json
+          jq -e '
+            (.canonical_entrypoint | type == "string") and
+            (.dependency_gate != null) and
+            ((.status // .platform_status // .state // "") | type == "string")
+          ' health.json
+
+      - name: Verify runtime audit contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/audit" -o audit.json
+          jq -e '
+            (.engines.declared_count >= 1) and
+            (.engines.declared | type == "array") and
+            (.dag.declared_count >= 1) and
+            (.runtime != null)
+          ' audit.json
+
+      - name: Verify Result Vault contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/vault/status" -o vault.json
+          jq -e '
+            (.ok == true) and
+            ((.backend == "postgresql") or (.backend == "sqlite_fallback")) and
+            (.schema_initialized_once == true)
+          ' vault.json
+
+      - name: Verify persisted execution APIs
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 \
+            "$AURORA_BACKEND/api/dag/runs/recent" -o dag.json
+          curl --fail --silent --show-error --retry 3 \
+            "$AURORA_BACKEND/api/jobs/recent" -o jobs.json
+          jq -e '(.ok == true) and (.runs | type == "array")' dag.json
+          jq -e '(.ok == true) and (.jobs | type == "array")' jobs.json
+
   simulator-build:
     runs-on: macos-15
     steps:
