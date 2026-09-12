@@ -122,6 +122,10 @@ final class AppModel: ObservableObject {
         }
     }
 
+    func storedDagRun(id: String) async throws -> JSONValue {
+        normalized(try await api.dagRun(id))
+    }
+
     func run(project: AuroraProject, context: ModelContext, module: String? = nil) {
         guard !isRunning else { return }
         isRunning = true
@@ -169,6 +173,77 @@ final class AppModel: ObservableObject {
             }
             isRunning = false
         }
+    }
+
+    func runScenario(
+        project: AuroraProject,
+        context: ModelContext,
+        name: String,
+        feedTPH: Double,
+        targetGrade: Double
+    ) {
+        guard !isRunning else { return }
+        isRunning = true
+        lastError = nil
+        let cleanName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Scenario" : name.trimmingCharacters(in: .whitespacesAndNewlines)
+        activeResultOrigin = "Scenario · \(cleanName)"
+        runStatus = "Starting scenario DAG"
+
+        let record = RunRecord(projectID: project.id)
+        context.insert(record)
+        try? context.save()
+
+        let payload = scenarioPayload(
+            for: project,
+            name: cleanName,
+            feedTPH: feedTPH,
+            targetGrade: targetGrade
+        )
+
+        Task {
+            do {
+                let final = try await api.runProject(payload) { [weak self] update in
+                    await MainActor.run {
+                        self?.apply(update: update, to: record, context: context)
+                    }
+                }
+                let display = normalized(final)
+                activeResult = display
+                runStatus = ResultTools.status(display)
+                record.status = runStatus
+                record.rawResultJSON = display.prettyString()
+                record.updatedAt = .now
+                try? context.save()
+                await refreshServerState()
+            } catch {
+                lastError = error.localizedDescription
+                runStatus = "Scenario execution error"
+                record.status = "error"
+                record.errorText = error.localizedDescription
+                record.updatedAt = .now
+                try? context.save()
+            }
+            isRunning = false
+        }
+    }
+
+    private func scenarioPayload(
+        for project: AuroraProject,
+        name: String,
+        feedTPH: Double,
+        targetGrade: Double
+    ) -> JSONValue {
+        guard case .object(var fields) = project.payload else { return project.payload }
+        fields["feed_tph"] = .number(max(feedTPH, 0))
+        fields["target_grade"] = .number(max(targetGrade, 0))
+        fields["scenario"] = .object([
+            "name": .string(name),
+            "base_project_id": .string(project.id.uuidString),
+            "basis": .string("governed_parameter_variant"),
+            "feed_tph": .number(max(feedTPH, 0)),
+            "target_grade": .number(max(targetGrade, 0))
+        ])
+        return .object(fields)
     }
 
     private func activate(_ value: JSONValue, id: String, origin: String) {
