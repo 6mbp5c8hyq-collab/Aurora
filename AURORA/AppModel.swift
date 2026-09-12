@@ -100,7 +100,7 @@ final class AppModel: ObservableObject {
             defer { isLoadingStoredRun = false }
             do {
                 let stored = try await api.dagRun(id)
-                activate(stored, id: id, origin: "Result Vault · DAG run")
+                activate(stored, id: id, origin: ScenarioMetadataStore.metadata(for: id) == nil ? "Result Vault · DAG run" : "Result Vault · scenario DAG")
             } catch {
                 lastError = error.localizedDescription
             }
@@ -123,13 +123,14 @@ final class AppModel: ObservableObject {
     }
 
     func storedDagRun(id: String) async throws -> JSONValue {
-        normalized(try await api.dagRun(id))
+        enriched(normalized(try await api.dagRun(id)), runID: id)
     }
 
     func run(project: AuroraProject, context: ModelContext, module: String? = nil) {
         guard !isRunning else { return }
         isRunning = true
         lastError = nil
+        ScenarioMetadataStore.clearPending()
         activeResultOrigin = module == nil ? "Live canonical DAG" : "Live governed engine"
         runStatus = module == nil ? "Starting DAG" : "Validating module"
 
@@ -155,7 +156,7 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                let display = normalized(final)
+                let display = enriched(normalized(final), runID: activeJobID)
                 activeResult = display
                 runStatus = ResultTools.status(display)
                 record.status = runStatus
@@ -189,6 +190,15 @@ final class AppModel: ObservableObject {
         activeResultOrigin = "Scenario · \(cleanName)"
         runStatus = "Starting scenario DAG"
 
+        ScenarioMetadataStore.setPending(.init(
+            name: cleanName,
+            projectID: project.id.uuidString,
+            projectName: project.name,
+            feedTPH: max(feedTPH, 0),
+            targetGrade: max(targetGrade, 0),
+            createdAt: .now
+        ))
+
         let record = RunRecord(projectID: project.id)
         context.insert(record)
         try? context.save()
@@ -207,7 +217,7 @@ final class AppModel: ObservableObject {
                         self?.apply(update: update, to: record, context: context)
                     }
                 }
-                let display = normalized(final)
+                let display = enriched(normalized(final), runID: activeJobID)
                 activeResult = display
                 runStatus = ResultTools.status(display)
                 record.status = runStatus
@@ -216,6 +226,7 @@ final class AppModel: ObservableObject {
                 try? context.save()
                 await refreshServerState()
             } catch {
+                ScenarioMetadataStore.clearPending()
                 lastError = error.localizedDescription
                 runStatus = "Scenario execution error"
                 record.status = "error"
@@ -247,7 +258,7 @@ final class AppModel: ObservableObject {
     }
 
     private func activate(_ value: JSONValue, id: String, origin: String) {
-        let display = normalized(value)
+        let display = enriched(normalized(value), runID: id)
         activeResult = display
         activeJobID = id
         activeResultOrigin = origin
@@ -255,17 +266,38 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(update: JSONValue, to record: RunRecord, context: ModelContext) {
-        let display = normalized(update)
-        activeResult = display
-        runStatus = ResultTools.status(display)
-        if let id = update.firstString(["run_id", "runId", "job_id", "jobId", "id"]) {
+        let id = update.firstString(["run_id", "runId", "job_id", "jobId", "id"])
+        if let id, !id.isEmpty {
             activeJobID = id
             record.jobID = id
+            ScenarioMetadataStore.bindPending(to: id)
         }
+        let display = enriched(normalized(update), runID: id ?? activeJobID)
+        activeResult = display
+        runStatus = ResultTools.status(display)
         record.status = runStatus
         record.updatedAt = .now
         record.rawResultJSON = display.prettyString()
         try? context.save()
+    }
+
+    private func enriched(_ value: JSONValue, runID: String?) -> JSONValue {
+        guard let runID,
+              let metadata = ScenarioMetadataStore.metadata(for: runID),
+              case .object(var object) = value else { return value }
+
+        if object["scenario"] == nil {
+            object["scenario"] = .object([
+                "name": .string(metadata.name),
+                "base_project_id": .string(metadata.projectID),
+                "project_name": .string(metadata.projectName),
+                "basis": .string("device_persisted_scenario_metadata"),
+                "feed_tph": .number(metadata.feedTPH),
+                "target_grade": .number(metadata.targetGrade),
+                "created_at": .string(metadata.createdAt.ISO8601Format())
+            ])
+        }
+        return .object(object)
     }
 
     private func normalized(_ value: JSONValue) -> JSONValue {
