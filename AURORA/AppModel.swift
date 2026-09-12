@@ -26,6 +26,8 @@ final class AppModel: ObservableObject {
     @Published var lastExportName: String?
     @Published var vaultStatus: JSONValue?
     @Published var runtimeAudit: JSONValue?
+    @Published var runtimeTelemetry: JSONValue?
+    @Published var performanceSnapshot: JSONValue?
     @Published var serverDagRuns: [JSONValue] = []
     @Published var serverJobs: [JSONValue] = []
 
@@ -36,7 +38,7 @@ final class AppModel: ObservableObject {
         Task {
             do {
                 let result = try await api.health()
-                connection = .online(result.firstString(["status", "platform_status", "ok"]) ?? "online")
+                connection = .online(result.firstString(["status", "platform_status", "state", "ok"]) ?? "online")
                 await refreshServerState(recoverLatest: true)
             } catch {
                 connection = .offline(error.localizedDescription)
@@ -47,11 +49,15 @@ final class AppModel: ObservableObject {
     func refreshServerState(recoverLatest: Bool = false) async {
         async let vaultTask = try? api.vaultStatus()
         async let auditTask = try? api.audit()
+        async let telemetryTask = try? api.telemetryRecent()
+        async let performanceTask = try? api.performanceProbe()
         async let dagTask = try? api.recentDagRuns()
         async let jobsTask = try? api.recentJobs()
 
         vaultStatus = await vaultTask
         runtimeAudit = await auditTask
+        runtimeTelemetry = await telemetryTask
+        performanceSnapshot = await performanceTask
 
         if let recent = await dagTask,
            let runsValue = recent.recursiveFind("runs"), case .array(let runs) = runsValue {
@@ -366,6 +372,17 @@ final class AppModel: ObservableObject {
         return .array([])
     }
 
+    private func exportRunReference(from result: JSONValue?) -> JSONValue? {
+        guard let result else { return nil }
+        if let jobID = result.firstString(["job_id", "jobId"]), !jobID.isEmpty {
+            return .object(["job_id": .string(jobID)])
+        }
+        if let runID = result.firstString(["run_id", "runId"]), !runID.isEmpty {
+            return .object(["dag_run_id": .string(runID)])
+        }
+        return nil
+    }
+
     func export(project: AuroraProject, format: String) {
         guard !isExporting else { return }
         isExporting = true
@@ -374,7 +391,9 @@ final class AppModel: ObservableObject {
         let analyses = exportEvidence(from: decodedAnalyses)
         let flowsheet = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.flowsheetJSON.utf8))) ?? .object(["units": .array([])])
         let diagnostics = exportDiagnostics(from: activeResult)
-        let body = JSONValue.object([
+        let runReference = exportRunReference(from: activeResult)
+
+        let directBody = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_" + project.name),
             "project": project.payload,
@@ -393,9 +412,27 @@ final class AppModel: ObservableObject {
             ])
         ])
 
+        var queuedBody = directBody
+        if let runReference, case .object(var fields) = directBody {
+            fields["run_ref"] = runReference
+            fields["result"] = .object([:])
+            fields["diagnostics"] = .array([])
+            fields["derive_diagnostics_on_server"] = .bool(true)
+            queuedBody = .object(fields)
+        }
+
         Task {
             do {
-                let file = try await api.export(body, format: format)
+                let file: (url: URL, name: String)
+                if runReference != nil {
+                    do {
+                        file = try await api.queuedExport(queuedBody, format: format)
+                    } catch {
+                        file = try await api.export(directBody, format: format)
+                    }
+                } else {
+                    file = try await api.export(directBody, format: format)
+                }
                 lastExportURL = file.url
                 lastExportName = file.name
             } catch {
