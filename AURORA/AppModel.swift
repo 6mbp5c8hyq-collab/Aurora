@@ -20,6 +20,7 @@ final class AppModel: ObservableObject {
     @Published var isExporting = false
     @Published var lastExportURL: URL?
     @Published var lastExportName: String?
+    @Published var vaultStatus: JSONValue?
 
     private let api = AURORAAPI()
 
@@ -29,9 +30,29 @@ final class AppModel: ObservableObject {
             do {
                 let result = try await api.health()
                 connection = .online(result.firstString(["status", "platform_status", "ok"]) ?? "online")
+                vaultStatus = try? await api.vaultStatus()
+                await recoverLatestServerRun()
             } catch {
                 connection = .offline(error.localizedDescription)
             }
+        }
+    }
+
+    private func recoverLatestServerRun() async {
+        do {
+            let recent = try await api.recentDagRuns()
+            guard let runsValue = recent.recursiveFind("runs"),
+                  case .array(let runs) = runsValue,
+                  let first = runs.first,
+                  let id = first.firstString(["run_id", "runId", "id"]),
+                  !id.isEmpty else { return }
+
+            let latest = try await api.dagRun(id)
+            activeResult = latest
+            activeJobID = id
+            runStatus = ResultTools.status(latest)
+        } catch {
+            // Recovery is best-effort. A healthy runtime remains usable even if no persisted run exists yet.
         }
     }
 
@@ -39,28 +60,27 @@ final class AppModel: ObservableObject {
         guard !isRunning else { return }
         isRunning = true
         lastError = nil
-        runStatus = "Validating"
+        runStatus = module == nil ? "Starting DAG" : "Validating module"
 
         let record = RunRecord(projectID: project.id)
         context.insert(record)
         try? context.save()
 
-        let executionPayload = executionPayload(for: project.payload, module: module)
-
         Task {
             do {
-                let final = try await api.run(executionPayload) { [weak self] update in
-                    await MainActor.run {
-                        self?.activeResult = update
-                        self?.runStatus = ResultTools.status(update)
-                        if let id = update.firstString(["job_id", "jobId", "id"]) {
-                            self?.activeJobID = id
-                            record.jobID = id
+                let final: JSONValue
+                if let module {
+                    let executionPayload = executionPayload(for: project.payload, module: module)
+                    final = try await api.run(executionPayload) { [weak self] update in
+                        await MainActor.run {
+                            self?.apply(update: update, to: record, context: context)
                         }
-                        record.status = self?.runStatus ?? "running"
-                        record.updatedAt = .now
-                        record.rawResultJSON = update.prettyString()
-                        try? context.save()
+                    }
+                } else {
+                    final = try await api.runProject(project.payload) { [weak self] update in
+                        await MainActor.run {
+                            self?.apply(update: update, to: record, context: context)
+                        }
                     }
                 }
 
@@ -70,6 +90,7 @@ final class AppModel: ObservableObject {
                 record.rawResultJSON = final.prettyString()
                 record.updatedAt = .now
                 try? context.save()
+                vaultStatus = try? await api.vaultStatus()
             } catch {
                 lastError = error.localizedDescription
                 runStatus = "Execution error"
@@ -81,12 +102,34 @@ final class AppModel: ObservableObject {
             isRunning = false
         }
     }
-    private func executionPayload(for base: JSONValue, module: String?) -> JSONValue {
-        guard let module, case .object(var fields) = base else { return base }
-        fields["runMode"] = .string("module")
-        fields["requested_module"] = .string(module)
-        fields["question"] = .string("Execute the selected governed AURORA engine and return evidence-bound outputs.")
-        return .object(fields)
+
+    private func apply(update: JSONValue, to record: RunRecord, context: ModelContext) {
+        activeResult = update
+        runStatus = ResultTools.status(update)
+        if let id = update.firstString(["run_id", "runId", "job_id", "jobId", "id"]) {
+            activeJobID = id
+            record.jobID = id
+        }
+        record.status = runStatus
+        record.updatedAt = .now
+        record.rawResultJSON = update.prettyString()
+        try? context.save()
+    }
+
+    private func executionPayload(for base: JSONValue, module: String) -> JSONValue {
+        var payload = base
+        if case .object(var fields) = base {
+            fields["runMode"] = .string("module")
+            fields["requested_module"] = .string(module)
+            fields["question"] = .string("Execute the selected governed AURORA engine and return evidence-bound outputs.")
+            payload = .object(fields)
+        }
+
+        return .object([
+            "operation": .string("canonical_mobile_execute"),
+            "requested_module": .string(module),
+            "payload": payload
+        ])
     }
 
     func export(project: AuroraProject, format: String) {
@@ -121,5 +164,4 @@ final class AppModel: ObservableObject {
             isExporting = false
         }
     }
-
 }
