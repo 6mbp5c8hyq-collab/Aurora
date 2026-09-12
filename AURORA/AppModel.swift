@@ -21,7 +21,9 @@ final class AppModel: ObservableObject {
     @Published var lastExportURL: URL?
     @Published var lastExportName: String?
     @Published var vaultStatus: JSONValue?
+    @Published var runtimeAudit: JSONValue?
     @Published var serverDagRuns: [JSONValue] = []
+    @Published var serverJobs: [JSONValue] = []
 
     private let api = AURORAAPI()
 
@@ -39,28 +41,37 @@ final class AppModel: ObservableObject {
     }
 
     func refreshServerState(recoverLatest: Bool = false) async {
-        vaultStatus = try? await api.vaultStatus()
+        async let vaultTask = try? api.vaultStatus()
+        async let auditTask = try? api.audit()
+        async let dagTask = try? api.recentDagRuns()
+        async let jobsTask = try? api.recentJobs()
 
-        do {
-            let recent = try await api.recentDagRuns()
-            if let runsValue = recent.recursiveFind("runs"), case .array(let runs) = runsValue {
-                serverDagRuns = runs
-            } else {
-                serverDagRuns = []
-            }
+        vaultStatus = await vaultTask
+        runtimeAudit = await auditTask
 
-            if recoverLatest,
-               let first = serverDagRuns.first,
-               let id = first.firstString(["run_id", "runId", "id"]),
-               !id.isEmpty {
-                let latest = try await api.dagRun(id)
-                let display = normalized(latest)
-                activeResult = display
-                activeJobID = id
-                runStatus = ResultTools.status(display)
-            }
-        } catch {
+        if let recent = await dagTask,
+           let runsValue = recent.recursiveFind("runs"), case .array(let runs) = runsValue {
+            serverDagRuns = runs
+        } else {
             serverDagRuns = []
+        }
+
+        if let jobs = await jobsTask,
+           let jobsValue = jobs.recursiveFind("jobs"), case .array(let rows) = jobsValue {
+            serverJobs = rows
+        } else {
+            serverJobs = []
+        }
+
+        if recoverLatest,
+           let first = serverDagRuns.first,
+           let id = first.firstString(["run_id", "runId", "id"]),
+           !id.isEmpty,
+           let latest = try? await api.dagRun(id) {
+            let display = normalized(latest)
+            activeResult = display
+            activeJobID = id
+            runStatus = ResultTools.status(display)
         }
     }
 
