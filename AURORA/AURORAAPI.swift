@@ -5,12 +5,14 @@ actor AURORAAPI {
         case invalidResponse
         case http(Int, String)
         case missingJobID
+        case missingRunID
 
         var errorDescription: String? {
             switch self {
             case .invalidResponse: return "Invalid AURORA response"
             case .http(let code, let body): return "AURORA HTTP \(code): \(body)"
             case .missingJobID: return "AURORA did not return a job identifier"
+            case .missingRunID: return "AURORA did not return a DAG run identifier"
             }
         }
     }
@@ -49,8 +51,18 @@ actor AURORAAPI {
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
 
+    private func terminalStatus(_ value: JSONValue) -> Bool {
+        let status = (value.firstString(["status", "platform_status", "state"]) ?? "").lowercased()
+        let terminal = ["completed", "success", "succeeded", "failed", "error", "blocked", "cancelled"]
+        return terminal.contains(where: { status.contains($0) })
+    }
+
     func health() async throws -> JSONValue {
         try await call("/api/health")
+    }
+
+    func vaultStatus() async throws -> JSONValue {
+        try await call("/api/vault/status")
     }
 
     func validate(_ payload: JSONValue) async throws -> JSONValue {
@@ -69,6 +81,42 @@ actor AURORAAPI {
         try await call("/api/jobs/\(id)")
     }
 
+    func recentJobs() async throws -> JSONValue {
+        try await call("/api/jobs/recent")
+    }
+
+    func createDagRun(_ payload: JSONValue) async throws -> (String, JSONValue) {
+        let body = JSONValue.object(["payload": payload])
+        let response = try await call("/api/dag/runs", method: "POST", body: body)
+        guard let id = response.firstString(["run_id", "runId", "id"]), !id.isEmpty else {
+            throw APIError.missingRunID
+        }
+        return (id, response)
+    }
+
+    func dagRun(_ id: String) async throws -> JSONValue {
+        try await call("/api/dag/runs/\(id)")
+    }
+
+    func recentDagRuns() async throws -> JSONValue {
+        try await call("/api/dag/runs/recent")
+    }
+
+    func runProject(_ payload: JSONValue, onUpdate: @Sendable (JSONValue) async -> Void) async throws -> JSONValue {
+        _ = try await validate(.object(["payload": payload]))
+        let (id, created) = try await createDagRun(payload)
+        await onUpdate(created)
+        var latest = created
+
+        for _ in 0..<900 {
+            latest = try await dagRun(id)
+            await onUpdate(latest)
+            if terminalStatus(latest) { return latest }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        return latest
+    }
+
     func run(_ payload: JSONValue, onUpdate: @Sendable (JSONValue) async -> Void) async throws -> JSONValue {
         _ = try await validate(payload)
         let (id, created) = try await createJob(payload)
@@ -78,13 +126,12 @@ actor AURORAAPI {
         for _ in 0..<900 {
             latest = try await job(id)
             await onUpdate(latest)
-            let status = (latest.firstString(["status", "platform_status", "state"]) ?? "").lowercased()
-            let terminal = ["completed", "success", "succeeded", "failed", "error", "blocked", "cancelled"]
-            if terminal.contains(where: { status.contains($0) }) { return latest }
+            if terminalStatus(latest) { return latest }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
         return latest
     }
+
     func importOre(data: Data, filename: String) async throws -> JSONValue {
         let body = JSONValue.object([
             "filename": .string(filename),
@@ -124,5 +171,4 @@ actor AURORAAPI {
         try data.write(to: target, options: .atomic)
         return (target, name)
     }
-
 }
