@@ -6,6 +6,9 @@ actor AURORAAPI {
         case http(Int, String)
         case missingJobID
         case missingRunID
+        case missingExportJobID
+        case exportFailed(String)
+        case exportTimedOut
 
         var errorDescription: String? {
             switch self {
@@ -13,6 +16,9 @@ actor AURORAAPI {
             case .http(let code, let body): return "AURORA HTTP \(code): \(body)"
             case .missingJobID: return "AURORA did not return a job identifier"
             case .missingRunID: return "AURORA did not return a DAG run identifier"
+            case .missingExportJobID: return "AURORA did not return an export job identifier"
+            case .exportFailed(let message): return "AURORA export failed: \(message)"
+            case .exportTimedOut: return "AURORA export worker did not finish before the client timeout"
             }
         }
     }
@@ -57,6 +63,34 @@ actor AURORAAPI {
         return terminal.contains(where: { status.contains($0) })
     }
 
+    private func download(path: String, fallbackName: String) async throws -> (url: URL, name: String) {
+        var request = URLRequest(url: endpoint(path))
+        request.httpMethod = "GET"
+        request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
+        request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
+
+        let (data, response) = try await session.data(for: request)
+        guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
+        guard (200..<300).contains(http.statusCode) else {
+            throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+        }
+
+        let disposition = http.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let name = disposition
+            .split(separator: ";")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first(where: { $0.lowercased().hasPrefix("filename=") })?
+            .split(separator: "=", maxSplits: 1)
+            .last
+            .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: " \"")) }
+            ?? fallbackName
+
+        let target = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent(name)
+        try data.write(to: target, options: .atomic)
+        return (target, name)
+    }
+
     func health() async throws -> JSONValue {
         try await call("/api/health")
     }
@@ -67,6 +101,14 @@ actor AURORAAPI {
 
     func audit() async throws -> JSONValue {
         try await call("/api/audit/deep")
+    }
+
+    func telemetryRecent() async throws -> JSONValue {
+        try await call("/api/telemetry/recent")
+    }
+
+    func performanceProbe() async throws -> JSONValue {
+        try await call("/api/perf/probe")
     }
 
     func vaultStatus() async throws -> JSONValue {
@@ -85,12 +127,17 @@ actor AURORAAPI {
         return (id, response)
     }
 
-    func job(_ id: String) async throws -> JSONValue {
-        try await call("/api/jobs/\(id)")
+    func job(_ id: String, preview: Bool = false) async throws -> JSONValue {
+        let suffix = preview ? "?preview=1" : ""
+        return try await call("/api/jobs/\(id)\(suffix)")
     }
 
     func recentJobs() async throws -> JSONValue {
         try await call("/api/jobs/recent")
+    }
+
+    func jobsHistory() async throws -> JSONValue {
+        try await call("/api/jobs/history")
     }
 
     func createDagRun(_ payload: JSONValue) async throws -> (String, JSONValue) {
@@ -132,9 +179,11 @@ actor AURORAAPI {
         var latest = created
 
         for _ in 0..<900 {
-            latest = try await job(id)
+            latest = try await job(id, preview: true)
             await onUpdate(latest)
-            if terminalStatus(latest) { return latest }
+            if terminalStatus(latest) {
+                return try await job(id)
+            }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
         return latest
@@ -146,6 +195,27 @@ actor AURORAAPI {
             "content_base64": .string(data.base64EncodedString())
         ])
         return try await call("/api/imports/ore", method: "POST", body: body)
+    }
+
+    func queuedExport(_ body: JSONValue, format: String) async throws -> (url: URL, name: String) {
+        let queued = try await call("/api/exports/jobs", method: "POST", body: body)
+        guard let id = queued.firstString(["job_id", "id"]), !id.isEmpty else {
+            throw APIError.missingExportJobID
+        }
+
+        for _ in 0..<600 {
+            let status = try await call("/api/exports/jobs/\(id)")
+            let state = (status.firstString(["status", "state"]) ?? "").lowercased()
+            if state == "ready" {
+                let fallback = "AURORA_Output." + (format == "bundle" ? "zip" : format)
+                return try await download(path: "/api/exports/jobs/\(id)/download", fallbackName: fallback)
+            }
+            if state == "failed" || state == "error" {
+                throw APIError.exportFailed(status.firstString(["error", "message"]) ?? state)
+            }
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        throw APIError.exportTimedOut
     }
 
     func export(_ body: JSONValue, format: String) async throws -> (url: URL, name: String) {
