@@ -54,9 +54,10 @@ final class AppModel: ObservableObject {
                let id = first.firstString(["run_id", "runId", "id"]),
                !id.isEmpty {
                 let latest = try await api.dagRun(id)
-                activeResult = latest
+                let display = normalized(latest)
+                activeResult = display
                 activeJobID = id
-                runStatus = ResultTools.status(latest)
+                runStatus = ResultTools.status(display)
             }
         } catch {
             serverDagRuns = []
@@ -91,10 +92,11 @@ final class AppModel: ObservableObject {
                     }
                 }
 
-                activeResult = final
-                runStatus = ResultTools.status(final)
+                let display = normalized(final)
+                activeResult = display
+                runStatus = ResultTools.status(display)
                 record.status = runStatus
-                record.rawResultJSON = final.prettyString()
+                record.rawResultJSON = display.prettyString()
                 record.updatedAt = .now
                 try? context.save()
                 await refreshServerState()
@@ -111,16 +113,33 @@ final class AppModel: ObservableObject {
     }
 
     private func apply(update: JSONValue, to record: RunRecord, context: ModelContext) {
-        activeResult = update
-        runStatus = ResultTools.status(update)
+        let display = normalized(update)
+        activeResult = display
+        runStatus = ResultTools.status(display)
         if let id = update.firstString(["run_id", "runId", "job_id", "jobId", "id"]) {
             activeJobID = id
             record.jobID = id
         }
         record.status = runStatus
         record.updatedAt = .now
-        record.rawResultJSON = update.prettyString()
+        record.rawResultJSON = display.prettyString()
         try? context.save()
+    }
+
+    private func normalized(_ value: JSONValue) -> JSONValue {
+        guard case .object(var object) = value else { return value }
+
+        let requested = object["requested_module"]?.stringValue
+            ?? object["requestedModule"]?.stringValue
+            ?? object["payload"]?.firstString(["requested_module", "requestedModule"])
+
+        if let requested, !requested.isEmpty,
+           let engineResult = object["result"] {
+            object[requested] = engineResult
+            object["active_engine"] = .string(requested)
+        }
+
+        return .object(object)
     }
 
     private func executionPayload(for base: JSONValue, module: String) -> JSONValue {
