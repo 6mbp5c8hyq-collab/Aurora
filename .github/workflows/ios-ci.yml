@@ -108,6 +108,33 @@ jobs:
             (.runtime.scientific_runtime_ready == true)
           ' audit.json
 
+      - name: Verify platform data and model catalog contract
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/platform/capabilities" -o platform-capabilities.json
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            "$AURORA_BACKEND/api/platform/databases" -o platform-databases.json
+          jq -e '
+            (.ok == true) and
+            (.revision | type == "string") and
+            (.engine_count >= 1) and
+            (.engines | type == "array") and
+            (.asset_count >= 1) and
+            (.readable_asset_count >= 1) and
+            (.categories | type == "object") and
+            (.governance | type == "object")
+          ' platform-capabilities.json
+          jq -e '
+            (.ok == true) and
+            (.count >= 1) and
+            (.assets | type == "array") and
+            (.asset_count >= .count) and
+            (.categories | type == "object") and
+            (.formats | type == "object") and
+            (.governance | type == "object")
+          ' platform-databases.json
+
       - name: Verify Result Vault contract
         run: |
           set -euo pipefail
