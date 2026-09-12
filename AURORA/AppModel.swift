@@ -21,6 +21,7 @@ final class AppModel: ObservableObject {
     @Published var lastExportURL: URL?
     @Published var lastExportName: String?
     @Published var vaultStatus: JSONValue?
+    @Published var serverDagRuns: [JSONValue] = []
 
     private let api = AURORAAPI()
 
@@ -30,29 +31,35 @@ final class AppModel: ObservableObject {
             do {
                 let result = try await api.health()
                 connection = .online(result.firstString(["status", "platform_status", "ok"]) ?? "online")
-                vaultStatus = try? await api.vaultStatus()
-                await recoverLatestServerRun()
+                await refreshServerState(recoverLatest: true)
             } catch {
                 connection = .offline(error.localizedDescription)
             }
         }
     }
 
-    private func recoverLatestServerRun() async {
+    func refreshServerState(recoverLatest: Bool = false) async {
+        vaultStatus = try? await api.vaultStatus()
+
         do {
             let recent = try await api.recentDagRuns()
-            guard let runsValue = recent.recursiveFind("runs"),
-                  case .array(let runs) = runsValue,
-                  let first = runs.first,
-                  let id = first.firstString(["run_id", "runId", "id"]),
-                  !id.isEmpty else { return }
+            if let runsValue = recent.recursiveFind("runs"), case .array(let runs) = runsValue {
+                serverDagRuns = runs
+            } else {
+                serverDagRuns = []
+            }
 
-            let latest = try await api.dagRun(id)
-            activeResult = latest
-            activeJobID = id
-            runStatus = ResultTools.status(latest)
+            if recoverLatest,
+               let first = serverDagRuns.first,
+               let id = first.firstString(["run_id", "runId", "id"]),
+               !id.isEmpty {
+                let latest = try await api.dagRun(id)
+                activeResult = latest
+                activeJobID = id
+                runStatus = ResultTools.status(latest)
+            }
         } catch {
-            // Recovery is best-effort. A healthy runtime remains usable even if no persisted run exists yet.
+            serverDagRuns = []
         }
     }
 
@@ -90,7 +97,7 @@ final class AppModel: ObservableObject {
                 record.rawResultJSON = final.prettyString()
                 record.updatedAt = .now
                 try? context.save()
-                vaultStatus = try? await api.vaultStatus()
+                await refreshServerState()
             } catch {
                 lastError = error.localizedDescription
                 runStatus = "Execution error"
