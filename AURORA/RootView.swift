@@ -37,7 +37,7 @@ struct RootView: View {
             switch self {
             case .dashboard: return "Live runtime and vault posture"
             case .projects: return "Ore evidence and process route"
-            case .execution: return "Canonical governed run"
+            case .execution: return "Preflight and canonical governed run"
             case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Run and inspect every engine"
             case .balances: return "Streams, conservation and closure"
@@ -57,7 +57,7 @@ struct RootView: View {
                 switch section {
                 case .dashboard: CommandCenterView()
                 case .projects: InputWorkflowView()
-                case .execution: ExecutionView()
+                case .execution: ExecutionControlView()
                 case .vault: ResultVaultBrowserView()
                 case .engines: EngineExplorerView()
                 case .balances: ProcessBalanceView()
