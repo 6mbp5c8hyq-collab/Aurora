@@ -16,6 +16,7 @@ struct RootView: View {
         case vault = "Result Vault"
         case engines = "Engine Observatory"
         case catalog = "Data & Model Catalog"
+        case components = "Component Registry"
         case results = "Results Explorer"
         case balances = "Stream & Balance"
         case evidence = "Evidence & QA"
@@ -36,6 +37,7 @@ struct RootView: View {
             case .vault: return "externaldrive.fill.badge.checkmark"
             case .engines: return "square.stack.3d.up.fill"
             case .catalog: return "server.rack"
+            case .components: return "shippingbox.and.arrow.backward.fill"
             case .results: return "magnifyingglass.circle.fill"
             case .balances: return "arrow.left.arrow.right.square.fill"
             case .evidence: return "checkmark.shield.fill"
@@ -56,6 +58,7 @@ struct RootView: View {
             case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Live matrix and per-engine workspaces"
             case .catalog: return "Runtime databases, models and references"
+            case .components: return "Python runtime census and authority boundary"
             case .results: return "Search every governed output path"
             case .balances: return "Streams, conservation and closure"
             case .evidence: return "Provenance, validation and uncertainty"
@@ -139,6 +142,7 @@ struct RootView: View {
                 case .vault: ResultVaultBrowserView()
                 case .engines: EngineWorkspaceNavigatorView(selectedEngineID: $selectedEngineID)
                 case .catalog: PlatformCatalogView()
+                case .components: RuntimeComponentRegistryView()
                 case .results: ResultsExplorerView()
                 case .balances: ProcessBalanceView()
                 case .evidence: EvidenceCenterView()
@@ -196,6 +200,7 @@ struct RootView: View {
                         Section.vault,
                         Section.engines,
                         Section.catalog,
+                        Section.components,
                         Section.results,
                         Section.balances,
                         Section.evidence,
