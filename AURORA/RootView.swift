@@ -4,11 +4,13 @@ struct RootView: View {
     @EnvironmentObject private var app: AppModel
     @State private var section: Section = .dashboard
     @AppStorage("aurora.engine.workspace.selected") private var selectedEngineID = "ore_intelligence"
+    @AppStorage("aurora.dag.stage.selected") private var selectedDagStageID = "input_admission"
 
     enum Section: String, CaseIterable, Identifiable {
         case dashboard = "Command Center"
         case projects = "Input Workflow"
         case execution = "Run AURORA"
+        case dag = "DAG Observatory"
         case scenarios = "Scenarios & Optimization"
         case operations = "Operations & Digital Twin"
         case vault = "Result Vault"
@@ -28,6 +30,7 @@ struct RootView: View {
             case .dashboard: return "square.grid.2x2.fill"
             case .projects: return "folder.badge.gearshape"
             case .execution: return "play.circle.fill"
+            case .dag: return "point.3.connected.trianglepath.dotted"
             case .scenarios: return "slider.horizontal.3"
             case .operations: return "dot.radiowaves.left.and.right"
             case .vault: return "externaldrive.fill.badge.checkmark"
@@ -47,6 +50,7 @@ struct RootView: View {
             case .dashboard: return "Live runtime and vault posture"
             case .projects: return "Ore evidence and process route"
             case .execution: return "Preflight and canonical governed run"
+            case .dag: return "Declared stages, live trace and stage payloads"
             case .scenarios: return "Governed variants and run comparison"
             case .operations: return "Envelope, controls and twin state"
             case .vault: return "Recover persisted DAG and engine runs"
@@ -88,6 +92,38 @@ struct RootView: View {
         return parsed.isEmpty ? SidebarEngineItem.fallback : parsed
     }
 
+    private var sidebarDagStages: [SidebarDAGStageItem] {
+        guard let audit = app.runtimeAudit,
+              let dagValue = audit.recursiveFind("dag"),
+              case .object(let dagObject) = dagValue,
+              let declaredValue = dagObject["declared"],
+              case .array(let declared) = declaredValue,
+              !declared.isEmpty else {
+            return SidebarDAGStageItem.fallback
+        }
+
+        let parsed = declared.compactMap { row -> SidebarDAGStageItem? in
+            switch row {
+            case .string(let id):
+                return .init(id: id, title: pretty(id))
+            case .object(let object):
+                let id = object["id"]?.stringValue
+                    ?? object["stage"]?.stringValue
+                    ?? object["name"]?.stringValue
+                    ?? object["key"]?.stringValue
+                guard let id, !id.isEmpty else { return nil }
+                let title = object["label"]?.stringValue
+                    ?? object["title"]?.stringValue
+                    ?? object["name"]?.stringValue
+                    ?? pretty(id)
+                return .init(id: id, title: title)
+            default:
+                return nil
+            }
+        }
+        return parsed.isEmpty ? SidebarDAGStageItem.fallback : parsed
+    }
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -97,6 +133,7 @@ struct RootView: View {
                 case .dashboard: CommandCenterView()
                 case .projects: InputWorkflowView()
                 case .execution: ExecutionControlView()
+                case .dag: DAGStageInspectorView(selectedStageID: $selectedDagStageID)
                 case .scenarios: ScenarioOptimizationView()
                 case .operations: OperationsTwinView()
                 case .vault: ResultVaultBrowserView()
@@ -111,15 +148,22 @@ struct RootView: View {
                 }
             }
             .background(AuroraTheme.background.ignoresSafeArea())
-            .navigationTitle(section == .engines ? engineNavigationTitle : section.rawValue)
+            .navigationTitle(navigationTitle)
             .navigationBarTitleDisplayMode(.large)
         }
         .tint(AuroraTheme.accent)
         .task { app.checkHealth() }
     }
 
-    private var engineNavigationTitle: String {
-        sidebarEngines.first(where: { $0.id == selectedEngineID })?.title ?? Section.engines.rawValue
+    private var navigationTitle: String {
+        switch section {
+        case .engines:
+            return sidebarEngines.first(where: { $0.id == selectedEngineID })?.title ?? Section.engines.rawValue
+        case .dag:
+            return sidebarDagStages.first(where: { $0.id == selectedDagStageID })?.title ?? Section.dag.rawValue
+        default:
+            return section.rawValue
+        }
     }
 
     private var sidebar: some View {
@@ -146,6 +190,7 @@ struct RootView: View {
                         Section.dashboard,
                         Section.projects,
                         Section.execution,
+                        Section.dag,
                         Section.scenarios,
                         Section.operations,
                         Section.vault,
@@ -158,6 +203,12 @@ struct RootView: View {
                         Section.deliverables
                     ], id: \.id) { item in
                         navigationRow(item)
+                    }
+                }
+
+                SwiftUI.Section("DAG STAGES") {
+                    ForEach(sidebarDagStages) { stage in
+                        dagNavigationRow(stage)
                     }
                 }
 
@@ -174,7 +225,7 @@ struct RootView: View {
             .listStyle(.sidebar)
             .scrollContentBackground(.hidden)
         }
-        .frame(minWidth: 280)
+        .frame(minWidth: 290)
         .background(AuroraTheme.background)
     }
 
@@ -202,6 +253,35 @@ struct RootView: View {
         }
         .buttonStyle(.plain)
         .listRowBackground(section == item ? AuroraTheme.accent.opacity(0.12) : Color.clear)
+    }
+
+    private func dagNavigationRow(_ stage: SidebarDAGStageItem) -> some View {
+        let selected = section == .dag && selectedDagStageID == stage.id
+        let color = dagStateColor(stage)
+        return Button {
+            selectedDagStageID = stage.id
+            withAnimation(.easeInOut(duration: 0.18)) { section = .dag }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: stage.icon)
+                    .frame(width: 21)
+                    .foregroundStyle(selected ? AuroraTheme.gold : color)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(stage.title)
+                        .font(.caption.weight(selected ? .semibold : .regular))
+                        .lineLimit(1)
+                    Text(stage.id)
+                        .font(.system(size: 8, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Spacer()
+                Circle().fill(color).frame(width: 6, height: 6)
+            }
+            .padding(.vertical, 3)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(selected ? AuroraTheme.gold.opacity(0.12) : Color.clear)
     }
 
     private func engineNavigationRow(_ engine: SidebarEngineItem) -> some View {
@@ -233,6 +313,84 @@ struct RootView: View {
         .buttonStyle(.plain)
         .listRowBackground(selected ? AuroraTheme.accent.opacity(0.12) : Color.clear)
     }
+
+    private func dagStateColor(_ stage: SidebarDAGStageItem) -> Color {
+        if app.activeResult?.recursiveFind(stage.id) != nil
+            || app.activeResult?.recursiveFind(stage.id.replacingOccurrences(of: "_", with: "")) != nil {
+            return AuroraTheme.good
+        }
+
+        if let live = matchingLiveStage(stage) {
+            let lower = live.status.lowercased()
+            if lower.contains("fail") || lower.contains("error") || lower.contains("block") || lower.contains("reject") {
+                return AuroraTheme.bad
+            }
+            if lower.contains("run") || lower.contains("progress") || lower.contains("queue") || lower.contains("start") {
+                return AuroraTheme.accent
+            }
+            if lower.contains("complete") || lower.contains("success") || lower.contains("pass") || lower.contains("done") || lower.contains("ready") {
+                return AuroraTheme.good
+            }
+            return AuroraTheme.gold
+        }
+
+        if app.isRunning && app.activeResultOrigin.localizedCaseInsensitiveContains("dag") {
+            return AuroraTheme.gold
+        }
+        return Color.secondary.opacity(0.45)
+    }
+
+    private func matchingLiveStage(_ stage: SidebarDAGStageItem) -> EngineStage? {
+        let target = normalize(stage.id)
+        let targetTitle = normalize(stage.title)
+        return ResultTools.stages(app.activeResult).first { live in
+            let name = normalize(live.name)
+            if name == target || name == targetTitle || name.contains(target) || target.contains(name) {
+                return true
+            }
+            let tokens = stage.id.split(separator: "_").map(String.init).filter { $0.count > 3 }
+            return !tokens.isEmpty && tokens.allSatisfy { name.contains($0.lowercased()) }
+        }
+    }
+
+    private func normalize(_ value: String) -> String {
+        value.lowercased()
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: " ", with: "")
+    }
+
+    private func pretty(_ value: String) -> String {
+        value.replacingOccurrences(of: "_", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .split(separator: " ")
+            .map { $0.capitalized }
+            .joined(separator: " ")
+    }
+}
+
+private struct SidebarDAGStageItem: Identifiable {
+    let id: String
+    let title: String
+
+    var icon: String {
+        let lower = id.lowercased()
+        if lower.contains("input") || lower.contains("admission") { return "tray.and.arrow.down.fill" }
+        if lower.contains("ore") || lower.contains("diagnos") { return "cube.transparent" }
+        if lower.contains("graph") || lower.contains("flow") { return "point.3.connected.trianglepath.dotted" }
+        if lower.contains("engine") || lower.contains("fan") { return "square.stack.3d.up.fill" }
+        if lower.contains("vault") || lower.contains("persist") || lower.contains("result") { return "externaldrive.fill.badge.checkmark" }
+        if lower.contains("valid") || lower.contains("gate") { return "checkmark.shield.fill" }
+        return "circle.hexagongrid.fill"
+    }
+
+    static let fallback: [SidebarDAGStageItem] = [
+        .init(id: "input_admission", title: "Input Admission"),
+        .init(id: "ore_diagnosis", title: "Ore Diagnosis"),
+        .init(id: "process_graph", title: "Process Graph"),
+        .init(id: "engine_fanout", title: "Engine Fan-out"),
+        .init(id: "result_vault", title: "Result Vault")
+    ]
 }
 
 private struct SidebarEngineItem: Identifiable {
