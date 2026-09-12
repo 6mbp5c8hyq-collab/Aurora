@@ -11,6 +11,7 @@ struct RootView: View {
         case vault = "Result Vault"
         case engines = "Engine Observatory"
         case balances = "Stream & Balance"
+        case evidence = "Evidence & QA"
         case engineering = "Engineering Studio"
         case deliverables = "Export Center"
         case settings = "Runtime Diagnostics"
@@ -25,6 +26,7 @@ struct RootView: View {
             case .vault: return "externaldrive.fill.badge.checkmark"
             case .engines: return "square.stack.3d.up.fill"
             case .balances: return "arrow.left.arrow.right.square.fill"
+            case .evidence: return "checkmark.shield.fill"
             case .engineering: return "drafting compass"
             case .deliverables: return "archivebox.fill"
             case .settings: return "gearshape.2.fill"
@@ -39,6 +41,7 @@ struct RootView: View {
             case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Run and inspect every engine"
             case .balances: return "Streams, conservation and closure"
+            case .evidence: return "Provenance, validation and uncertainty"
             case .engineering: return "PFD, P&ID and drawings"
             case .deliverables: return "PDF, Word, Excel and bundle"
             case .settings: return "Audit, gates and backend health"
@@ -58,6 +61,7 @@ struct RootView: View {
                 case .vault: ResultVaultBrowserView()
                 case .engines: EngineExplorerView()
                 case .balances: ProcessBalanceView()
+                case .evidence: EvidenceCenterView()
                 case .engineering: EngineeringStudioView()
                 case .deliverables: DeliverablesCenterView()
                 case .settings: RuntimeDiagnosticsView()
@@ -98,6 +102,7 @@ struct RootView: View {
                         Section.vault,
                         Section.engines,
                         Section.balances,
+                        Section.evidence,
                         Section.engineering,
                         Section.deliverables
                     ], id: \.id) { item in
