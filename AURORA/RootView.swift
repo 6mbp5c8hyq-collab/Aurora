@@ -12,7 +12,7 @@ struct RootView: View {
         case balances = "Stream & Balance"
         case engineering = "Engineering Studio"
         case deliverables = "Export Center"
-        case settings = "Runtime Settings"
+        case settings = "Runtime Diagnostics"
 
         var id: String { rawValue }
 
@@ -38,7 +38,7 @@ struct RootView: View {
             case .balances: return "Streams, conservation and closure"
             case .engineering: return "PFD, P&ID and drawings"
             case .deliverables: return "PDF, Word, Excel and bundle"
-            case .settings: return "Backend and diagnostics"
+            case .settings: return "Audit, gates and backend health"
             }
         }
     }
@@ -56,7 +56,7 @@ struct RootView: View {
                 case .balances: ProcessBalanceView()
                 case .engineering: EngineeringStudioView()
                 case .deliverables: DeliverablesCenterView()
-                case .settings: SettingsView()
+                case .settings: RuntimeDiagnosticsView()
                 }
             }
             .background(AuroraTheme.background.ignoresSafeArea())
