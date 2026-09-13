@@ -1,0 +1,52 @@
+name: AURORA Copilot Live Smoke
+
+on:
+  push:
+    branches: [ main ]
+
+concurrency:
+  group: aurora-ai-live-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  live-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify configured gateway and one real OpenAI response
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --silent --show-error \
+            "$AURORA_BACKEND/api/ai/status" > ai-status.json
+
+          jq -e '
+            .ok == true and
+            .configured == true and
+            .api_key_exposed_to_client == false and
+            .execution_tools_require_explicit_client_authorization == true
+          ' ai-status.json
+
+          code=$(curl --silent --show-error \
+            --output ai-chat.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data '{"message":"This is a connectivity smoke test. Reply briefly that AURORA Copilot is online. Do not call any tools and do not provide any scientific claim.","mode":"standard","allow_execution":false,"history":[]}' \
+            "$AURORA_BACKEND/api/ai/chat")
+
+          echo "HTTP=$code"
+          cat ai-chat.json
+          test "$code" = "200"
+          jq -e '
+            .ok == true and
+            (.answer | type == "string" and length > 0) and
+            .authority == "ai_interpretation_over_aurora_context" and
+            .governance.execution_authorized == false and
+            .governance.ai_is_not_scientific_authority == true and
+            .governance.aurora_runtime_results_remain_authoritative_for_computed_outputs == true and
+            (.tool_events | type == "array" and length == 0)
+          ' ai-chat.json
