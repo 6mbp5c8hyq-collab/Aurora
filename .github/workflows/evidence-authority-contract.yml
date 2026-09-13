@@ -1,0 +1,64 @@
+name: Evidence Authority Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-evidence-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  evidence-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify governed evidence export
+        run: |
+          set -euo pipefail
+          cat > payload.json <<'JSON'
+          {
+            "format": "csv",
+            "filename": "AURORA_CI_Evidence_Authority",
+            "project": {"name": "CI evidence authority contract"},
+            "designBasis": {
+              "export_scope": "recognized_returned_evidence_paths",
+              "authority": "active_result_returned_values_only",
+              "engine_link_rule": "registered_engine_id_in_returned_path_hierarchy_only",
+              "coverage_rule": "path_presence_not_pass_status",
+              "engine_filter": "thermodynamics",
+              "dimension_filter": "validation",
+              "query_filter": "rmse",
+              "visible_path_count": 1
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "result": {
+              "evidence_paths": [{
+                "path": "thermodynamics.validation.rmse",
+                "value": "0.04",
+                "dimension": "validation",
+                "engine_id": "thermodynamics",
+                "relationship": "engine_id_in_returned_path_hierarchy",
+                "authority": "path_presence_only_not_pass_status"
+              }]
+            },
+            "run": {"id": null, "origin": "ci_contract", "status": "contract_test", "scope": "evidence_authority_workspace"}
+          }
+          JSON
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output evidence.csv \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @payload.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s evidence.csv
+          bytes=$(wc -c < evidence.csv)
+          test "$bytes" -gt 20
+          echo "evidence authority CSV bytes=$bytes"
