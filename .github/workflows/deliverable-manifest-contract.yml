@@ -1,0 +1,112 @@
+name: Deliverable Manifest Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-deliverable-manifest-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deliverable-scopes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify full run bundle export
+        run: |
+          set -euo pipefail
+          cat > full-run.json <<'JSON'
+          {
+            "format": "bundle",
+            "filename": "AURORA_CI_Full_Run",
+            "project": {"name": "CI full run deliverable"},
+            "designBasis": {"target_component": "P2O5", "target_grade": 35},
+            "analyses": [],
+            "flowsheet": {"units": []},
+            "diagnostics": [],
+            "result": {"status": "completed", "diagnostics": {"claim_ceiling": "screening"}},
+            "run": {"id": null, "origin": "ci_contract", "status": "completed"}
+          }
+          JSON
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output full-run.bundle \
+            --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data-binary @full-run.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s full-run.bundle
+          test $(wc -c < full-run.bundle) -gt 20
+
+      - name: Verify selected engine scoped export
+        run: |
+          set -euo pipefail
+          cat > engine.json <<'JSON'
+          {
+            "format": "csv",
+            "filename": "AURORA_CI_thermodynamics",
+            "project": {"name": "CI engine deliverable"},
+            "designBasis": {
+              "engine_id": "thermodynamics",
+              "engine_title": "Thermodynamics",
+              "export_scope": "single_governed_engine"
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "result": {
+              "engine_id": "thermodynamics",
+              "engine_title": "Thermodynamics",
+              "thermodynamics": {"water": {"pH": 7.1}}
+            },
+            "run": {"id": null, "origin": "ci_contract", "status": "completed", "scope": "engine_workspace"}
+          }
+          JSON
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output engine.csv \
+            --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data-binary @engine.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s engine.csv
+          test $(wc -c < engine.csv) -gt 20
+
+      - name: Verify selected DAG stage scoped export
+        run: |
+          set -euo pipefail
+          cat > stage.json <<'JSON'
+          {
+            "format": "csv",
+            "filename": "AURORA_CI_DAG_ore_diagnosis",
+            "project": {"name": "CI stage deliverable"},
+            "designBasis": {
+              "stage_id": "ore_diagnosis",
+              "stage_title": "Ore Diagnosis",
+              "export_scope": "single_returned_dag_stage",
+              "authority": "returned_stage_payload_only"
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "result": {
+              "stage_id": "ore_diagnosis",
+              "stage_title": "Ore Diagnosis",
+              "stage_scope": "returned_payload",
+              "ore_diagnosis": {"status": "completed", "ore_class": "ci_contract"}
+            },
+            "run": {"id": null, "origin": "ci_contract", "status": "completed", "scope": "dag_stage_deliverable"}
+          }
+          JSON
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output stage.csv \
+            --write-out '%{http_code}' \
+            -H 'Content-Type: application/json' \
+            --data-binary @stage.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s stage.csv
+          test $(wc -c < stage.csv) -gt 20
