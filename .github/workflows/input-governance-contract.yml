@@ -22,6 +22,7 @@ jobs:
           set -euo pipefail
           test -s AURORA/GovernedInputWorkflowView.swift
           test -s AURORA/InputWorkflowView.swift
+          test -s AURORA/Core.swift
           grep -q 'GovernedInputWorkflowView()' AURORA/InputWorkflowView.swift
           grep -q 'measured_requires_nonempty_source_reference' AURORA/GovernedInputWorkflowView.swift
           grep -q 'measured_claim_source_missing' AURORA/GovernedInputWorkflowView.swift
@@ -30,52 +31,63 @@ jobs:
           grep -q 'design_intent_not_as_built' AURORA/GovernedInputWorkflowView.swift
           grep -q 'SEMANTIC RELEVANCE ONLY' AURORA/GovernedInputWorkflowView.swift
           grep -q 'NO COMPLETENESS SCORE' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'var canonicalProject: JSONValue' AURORA/Core.swift
+          grep -q 'var canonicalDesignBasis: JSONValue' AURORA/Core.swift
+          grep -q 'var canonicalAnalyses: JSONValue' AURORA/Core.swift
+          grep -q '"feedTph": .number(feedTPH)' AURORA/Core.swift
+          grep -q '"project": canonicalProject' AURORA/Core.swift
+          grep -q '"designBasis": canonicalDesignBasis' AURORA/Core.swift
+          grep -q '"analyses": canonicalAnalyses' AURORA/Core.swift
 
-      - name: Verify production preflight accepts governed payload
+      - name: Verify production preflight accepts canonical governed payload
         run: |
           set -euo pipefail
           cat > governed-input.json <<'JSON'
           {
             "payload": {
-              "project_id": "11111111-2222-3333-4444-555555555555",
-              "project_name": "CI Governed Input",
-              "feed_tph": 80.0,
-              "declared_family": "phosphate",
-              "target_component": "P2O5",
-              "target_grade": 35.0,
-              "notes": "CI contract",
-              "analyses": {
-                "quick_assays": {
-                  "P2O5": 20.1,
-                  "P80_um": 250.0
-                },
-                "quick_assays_authority": "field_level_metadata",
-                "quick_assay_metadata": {
-                  "P2O5": {
-                    "requested_authority": "measured",
-                    "effective_authority": "measured_source_tagged",
-                    "source_reference": "CI-LAB-001",
-                    "unit": "%",
-                    "governance_rule": "measured_requires_nonempty_source_reference"
-                  },
-                  "P80_um": {
-                    "requested_authority": "estimated",
-                    "effective_authority": "estimated",
-                    "source_reference": "",
-                    "unit": "µm",
-                    "governance_rule": "measured_requires_nonempty_source_reference"
-                  }
-                },
-                "input_governance": {
-                  "design_basis_authority": "user_declared_design_basis",
-                  "quick_assay_rule": "field_level_authority_with_measured_source_requirement",
-                  "server_import_rule": "server_parsed_input_not_automatically_measured"
-                }
+              "project": {
+                "id": "11111111-2222-3333-4444-555555555555",
+                "name": "CI Governed Input",
+                "oreType": "phosphate",
+                "feedTph": 80.0
               },
+              "designBasis": {
+                "targetComponent": "P2O5",
+                "targetGrade": 35.0,
+                "authority": "user_declared_design_basis"
+              },
+              "analyses": [
+                {
+                  "type": "XRF",
+                  "parameter": "P2O5",
+                  "value": 20.1,
+                  "unit": "%",
+                  "status": "MEASURED",
+                  "source": "CI-LAB-001",
+                  "sample": "FEED",
+                  "authority_requested": "measured",
+                  "authority_effective": "measured_source_tagged"
+                },
+                {
+                  "type": "PSD",
+                  "parameter": "P80",
+                  "value": 250.0,
+                  "unit": "µm",
+                  "status": "ESTIMATED",
+                  "source": "mobile_quick_assay",
+                  "sample": "FEED",
+                  "authority_requested": "estimated",
+                  "authority_effective": "estimated"
+                }
+              ],
               "flowsheet": {
                 "units": ["ROM Feed", "Scrubbing", "Desliming", "Flotation", "Product", "Tailings"],
                 "authority": "user_declared_process_route",
                 "topology_status": "design_intent_not_as_built"
+              },
+              "inputGovernance": {
+                "runtime_projection": "canonical_analysis_array",
+                "measured_rule": "measured_requires_nonempty_source_reference"
               }
             }
           }
@@ -91,4 +103,5 @@ jobs:
           echo "HTTP status=$status"
           cat preflight.json
           test "$status" = "200"
-          jq -e 'type == "object"' preflight.json
+          jq -e '.ok == true and .status == "input_valid" and .feed_tph == 80 and (.unit_count | tonumber) >= 1' preflight.json
+          jq -e '.target.value == 35 or .target.value == 35.0' preflight.json
