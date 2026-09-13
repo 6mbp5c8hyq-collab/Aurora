@@ -1,0 +1,92 @@
+name: AURORA Copilot Contract
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-ai-copilot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ai-copilot-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify native Copilot authority boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f AURORA/AURORACopilotView.swift
+          grep -Fq '/api/ai/status' AURORA/AURORACopilotView.swift
+          grep -Fq '/api/ai/chat' AURORA/AURORACopilotView.swift
+          grep -Fq 'Allow AURORA Actions' AURORA/AURORACopilotView.swift
+          grep -Fq 'Authority: AI interpretation' AURORA/AURORACopilotView.swift
+          grep -Fq 'AURORA calculated' AURORA/AURORACopilotView.swift
+          grep -Fq 'Measured' AURORA/AURORACopilotView.swift
+          grep -Fq 'Component/resource use' AURORA/AURORACopilotView.swift
+          grep -Fq 'case copilot = "AURORA Copilot"' AURORA/RootView.swift
+          grep -Fq 'case .copilot: AURORACopilotView()' AURORA/RootView.swift
+          grep -Fq 'Section.copilot,' AURORA/RootView.swift
+          if grep -R --include='*.swift' -n 'OPENAI_API_KEY' AURORA; then
+            echo 'OPENAI_API_KEY must never be embedded in native Swift source' >&2
+            exit 1
+          fi
+
+      - name: Wait for governed AI gateway live status
+        shell: bash
+        run: |
+          set -euo pipefail
+          ready=0
+          for attempt in $(seq 1 100); do
+            code=$(curl --silent --show-error \
+              --output ai-status.json \
+              --write-out '%{http_code}' \
+              "$AURORA_BACKEND/api/ai/status" || true)
+            echo "AI status attempt=$attempt http=$code"
+            if [ "$code" = "200" ] && jq -e '
+              .ok == true and
+              .revision == "AURORA-AI-GATEWAY-2026.09.13-1" and
+              .provider == "openai" and
+              .responses_api == true and
+              .tool_calling == true and
+              .execution_tools_require_explicit_client_authorization == true and
+              .api_key_exposed_to_client == false and
+              .governance.ai_role == "interpret_orchestrate_explain" and
+              .governance.component_use_inference == "prohibited" and
+              .governance.resource_use_inference == "prohibited"
+            ' ai-status.json >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          test "$ready" = "1"
+          cat ai-status.json
+          jq -r '.configured' ai-status.json > ai-configured.txt
+
+      - name: Verify chat route fails closed without a secret or rejects empty input when configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          configured=$(cat ai-configured.txt)
+          code=$(curl --silent --show-error \
+            --output ai-chat-empty.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data '{}' \
+            "$AURORA_BACKEND/api/ai/chat")
+          cat ai-chat-empty.json
+          if [ "$configured" = "true" ]; then
+            test "$code" = "400"
+            jq -e '.ok == false and .error == "message_required"' ai-chat-empty.json
+          else
+            test "$code" = "503"
+            jq -e '.ok == false and .error == "ai_gateway_not_configured"' ai-chat-empty.json
+          fi
