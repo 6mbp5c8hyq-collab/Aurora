@@ -12,7 +12,7 @@ concurrency:
 jobs:
   runtime-use-ledger-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
     steps:
@@ -56,34 +56,141 @@ jobs:
             all(.events[]?; (.target_type != "python_component" and .target_type != "scientific_asset"))
           ' ledger.json
 
-      - name: Verify selected-engine dispatch evidence from a persisted job
+      - name: Build governed ledger fixture and resolve execution engine
         shell: bash
         run: |
           set -euo pipefail
+          cat > payload.json <<'JSON'
+          {
+            "project": {
+              "id": "88888888-2222-3333-4444-555555555555",
+              "name": "CI Runtime Use Ledger",
+              "oreType": "phosphate",
+              "feedTph": 80.0
+            },
+            "designBasis": {
+              "targetComponent": "P2O5",
+              "targetGrade": 35.0,
+              "authority": "user_declared_design_basis"
+            },
+            "analyses": [
+              {
+                "type": "XRF",
+                "parameter": "P2O5",
+                "value": 20.1,
+                "unit": "%",
+                "status": "MEASURED",
+                "source": "CI-LEDGER-LAB-001",
+                "sample": "FEED",
+                "authority_requested": "measured",
+                "authority_effective": "measured_source_tagged"
+              }
+            ],
+            "flowsheet": {
+              "units": ["ROM Feed", "Scrubbing", "Desliming", "Flotation", "Product", "Tailings"],
+              "authority": "user_declared_process_route",
+              "topology_status": "design_intent_not_as_built"
+            },
+            "inputGovernance": {
+              "runtime_projection": "canonical_analysis_array",
+              "measured_rule": "measured_requires_nonempty_source_reference"
+            }
+          }
+          JSON
+          jq -e '.project.feedTph == 80 and (.analyses | type == "array")' payload.json
+
           curl --fail --silent --show-error --retry 4 \
-            "$AURORA_BACKEND/api/jobs/recent" -o jobs.json
-          JOB_ID=$(jq -r '[.jobs[]? | select(((.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule // "") | length) > 0) | (.job_id // .jobId // .id)][0] // empty' jobs.json)
-          ENGINE_ID=$(jq -r '[.jobs[]? | select(((.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule // "") | length) > 0) | (.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule)][0] // empty' jobs.json)
-          test -n "$JOB_ID"
+            "$AURORA_BACKEND/api/platform/capabilities" -o capabilities.json
+          ENGINE_ID=$(jq -r '[.engines[]? | select(.id == "ore_intelligence") | .id][0] // .engines[0].id // empty' capabilities.json)
           test -n "$ENGINE_ID"
+          echo "ENGINE_ID=$ENGINE_ID" >> "$GITHUB_ENV"
+
+      - name: Create and verify exact selected-engine dispatch evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --arg engine "$ENGINE_ID" \
+            '. + {runMode:"module", requested_module:$engine, question:"Execute the selected governed AURORA engine and return evidence-bound outputs."}' \
+            payload.json > module-payload.json
+          jq -n --arg engine "$ENGINE_ID" --slurpfile payload module-payload.json \
+            '{operation:"canonical_mobile_execute", requested_module:$engine, payload:$payload[0]}' > job-request.json
+
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @job-request.json \
+            "$AURORA_BACKEND/api/validate" -o module-validate.json
+          jq -e '.ok == true and .status == "input_valid"' module-validate.json
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output job-created.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @job-request.json \
+            "$AURORA_BACKEND/api/jobs")
+          test "$status" = "200" -o "$status" = "201" -o "$status" = "202"
+          JOB_ID=$(jq -r '.job_id // .jobId // .id // empty' job-created.json)
+          test -n "$JOB_ID"
+
+          terminal=0
+          for attempt in $(seq 1 90); do
+            curl --fail --silent --show-error --retry 3 \
+              "$AURORA_BACKEND/api/jobs/$JOB_ID?preview=1" -o engine-job.json
+            state=$(jq -r '(.status // .state // .platform_status // "") | ascii_downcase' engine-job.json)
+            echo "engine attempt=$attempt state=$state"
+            case "$state" in
+              completed|success|succeeded|failed|error|blocked|cancelled)
+                terminal=1
+                break
+                ;;
+            esac
+            sleep 4
+          done
+          test "$terminal" = "1"
+
           curl --fail --silent --show-error --retry 4 \
             "$AURORA_BACKEND/api/runtime/use-ledger?job_id=$JOB_ID" -o job-ledger.json
           jq -e --arg job "$JOB_ID" --arg engine "$ENGINE_ID" '
             .ok == true and
             (.events | type == "array") and
-            (any(.events[]?; .run_id == $job and .target_type == "canonical_runtime" and .evidence_class == "observed_dispatch")) and
+            (any(.events[]?; .run_id == $job and .target_type == "canonical_runtime" and .evidence_class == "observed_dispatch" and .proof_type == "job_entered_canonical_executor")) and
             (any(.events[]?; .run_id == $job and .target_type == "registered_engine" and .engine_id == $engine and .evidence_class == "observed_dispatch" and .proof_type == "explicit_requested_module_dispatch")) and
             all(.events[]?; .target_type != "python_component" and .target_type != "scientific_asset")
           ' job-ledger.json
 
-      - name: Verify DAG fan-out evidence without per-engine dispatch inference
+      - name: Create and verify exact DAG fan-out evidence without per-engine dispatch inference
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --retry 4 \
-            "$AURORA_BACKEND/api/dag/runs/recent" -o dags.json
-          RUN_ID=$(jq -r '[.runs[]? | select(((.run_id // .runId // .id // "") | length) > 0) | (.run_id // .runId // .id)][0] // empty' dags.json)
+          jq -n --slurpfile payload payload.json '{payload:$payload[0]}' > dag-request.json
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output dag-created.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @dag-request.json \
+            "$AURORA_BACKEND/api/dag/runs")
+          test "$status" = "200" -o "$status" = "201" -o "$status" = "202"
+          RUN_ID=$(jq -r '.run_id // .runId // .id // empty' dag-created.json)
           test -n "$RUN_ID"
+
+          terminal=0
+          for attempt in $(seq 1 90); do
+            curl --fail --silent --show-error --retry 3 \
+              "$AURORA_BACKEND/api/dag/runs/$RUN_ID" -o dag-run.json
+            state=$(jq -r '(.status // .state // .run.status // "") | ascii_downcase' dag-run.json)
+            echo "dag attempt=$attempt state=$state"
+            case "$state" in
+              completed|success|succeeded|failed|error|blocked|cancelled)
+                terminal=1
+                break
+                ;;
+            esac
+            sleep 4
+          done
+          test "$terminal" = "1"
+
           curl --fail --silent --show-error --retry 4 \
             "$AURORA_BACKEND/api/runtime/use-ledger?run_id=$RUN_ID" -o dag-ledger.json
           jq -e --arg run "$RUN_ID" '
@@ -91,5 +198,7 @@ jobs:
             (.events | type == "array") and
             (any(.events[]?; .run_id == $run and .target_type == "canonical_runtime" and .evidence_class == "observed_dispatch" and .proof_type == "dag_engine_fanout_entered_canonical_executor")) and
             all(.events[]?; (.target_type != "registered_engine" or .evidence_class != "observed_dispatch")) and
-            all(.events[]?; .target_type != "python_component" and .target_type != "scientific_asset")
+            all(.events[]?; .target_type != "python_component" and .target_type != "scientific_asset") and
+            .summary.component_use_count == 0 and
+            .summary.resource_use_count == 0
           ' dag-ledger.json
