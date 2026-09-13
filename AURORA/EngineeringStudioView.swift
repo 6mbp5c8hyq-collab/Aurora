@@ -21,6 +21,9 @@ struct EngineeringStudioView: View {
     private var nodes: [DrawingNode] { runtimeTopology.nodes }
     private var streams: [EngineeringStream] { RuntimeTopology.streams(from: app.activeResult) }
     private var selectedNode: DrawingNode? { nodes.first { $0.id == selectedNodeID } }
+    private var engineeringArtifacts: [EngineeringArtifactReference] {
+        EngineeringArtifactReference.scan(app.activeResult)
+    }
 
     enum DrawingTab: String, CaseIterable, Identifiable {
         case pfd = "PFD"
@@ -45,6 +48,7 @@ struct EngineeringStudioView: View {
                 toolbar
                 drawingSurface
                 if let selectedNode { detailCard(selectedNode) }
+                runtimeArtifactCenter
                 engineeringAuthority
                 legend
             }
@@ -79,6 +83,9 @@ struct EngineeringStudioView: View {
                     Text("\(nodes.count) units · \(streams.count) streams")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
+                    Text("\(engineeringArtifacts.count) returned artifact refs")
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(engineeringArtifacts.isEmpty ? .secondary : AuroraTheme.gold)
                 }
             }
         }
@@ -213,6 +220,72 @@ struct EngineeringStudioView: View {
         }
     }
 
+    private var runtimeArtifactCenter: some View {
+        AuroraCard {
+            VStack(alignment: .leading, spacing: 11) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Runtime Engineering Artifact References").font(.headline)
+                        Text("References are discovered only from scalar values returned by the active AURORA result and carrying recognized engineering file extensions.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusBadge(text: engineeringArtifacts.isEmpty ? "None returned" : "\(engineeringArtifacts.count) returned")
+                }
+
+                if engineeringArtifacts.isEmpty {
+                    ContentUnavailableView(
+                        "No engineering artifact reference returned",
+                        systemImage: "doc.badge.ellipsis",
+                        description: Text("The native schematic remains available above, but it is not promoted to an authoritative backend drawing.")
+                    )
+                    .frame(maxWidth: .infinity, minHeight: 140)
+                } else {
+                    ForEach(engineeringArtifacts.prefix(80)) { artifact in
+                        HStack(alignment: .top, spacing: 11) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 9).fill(AuroraTheme.gold.opacity(0.11)).frame(width: 40, height: 40)
+                                Image(systemName: artifact.icon).foregroundStyle(AuroraTheme.gold)
+                            }
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(artifact.format).font(.caption2.bold()).foregroundStyle(AuroraTheme.gold)
+                                Text(artifact.label).font(.caption.bold()).lineLimit(2)
+                                Text(artifact.raw).font(.system(size: 9, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled).lineLimit(4)
+                            }
+                            Spacer()
+                            VStack(alignment: .trailing, spacing: 6) {
+                                if let url = artifact.directURL {
+                                    Link(destination: url) {
+                                        Label("Open", systemImage: "arrow.up.right.square")
+                                    }
+                                    .buttonStyle(.bordered)
+                                    ShareLink(item: url) {
+                                        Label("Share", systemImage: "square.and.arrow.up")
+                                    }
+                                    .buttonStyle(.bordered)
+                                } else {
+                                    StatusBadge(text: "Reference only")
+                                }
+                            }
+                        }
+                        .padding(.vertical, 5)
+                        Divider().opacity(0.08)
+                    }
+                    if engineeringArtifacts.count > 80 {
+                        Text("Showing 80 of \(engineeringArtifacts.count) returned engineering references.")
+                            .font(.caption2)
+                            .foregroundStyle(AuroraTheme.warn)
+                    }
+                }
+
+                Text("A returned path or URL proves only that the active result contains that reference. It does not by itself validate drawing contents, revision status, EPC approval, or whether the referenced file was generated in the current run.")
+                    .font(.caption2)
+                    .foregroundStyle(AuroraTheme.warn)
+            }
+        }
+    }
+
     private var engineeringAuthority: some View {
         AuroraCard {
             HStack(alignment: .top, spacing: 12) {
@@ -236,6 +309,7 @@ struct EngineeringStudioView: View {
             Label("Material path", systemImage: "arrow.right").foregroundStyle(AuroraTheme.accent)
             Label("Stream value", systemImage: "tag.fill").foregroundStyle(AuroraTheme.gold)
             Label("Runtime-derived", systemImage: "checkmark.seal").foregroundStyle(AuroraTheme.good)
+            Label("Returned artifact ref", systemImage: "doc.badge.arrow.up").foregroundStyle(AuroraTheme.gold)
         }
         .font(.caption)
         .padding(.horizontal, 6)
@@ -257,6 +331,50 @@ struct EngineeringStudioView: View {
         case .pid: return "P&ID mode: schematic process/instrument overlay only. Instrumentation is not invented when tags are absent."
         case .layout: return "2D mode: schematic arrangement unless the runtime explicitly supplies governed equipment coordinates."
         }
+    }
+}
+
+private struct EngineeringArtifactReference: Identifiable {
+    let id = UUID()
+    let label: String
+    let raw: String
+    let format: String
+    let directURL: URL?
+
+    var icon: String {
+        switch format.lowercased() {
+        case "svg", "png": return "photo.on.rectangle.angled"
+        case "dxf", "dwg": return "ruler.fill"
+        case "ifc", "step", "stp", "iges", "igs": return "cube.transparent.fill"
+        case "pdf": return "doc.richtext.fill"
+        default: return "doc.fill"
+        }
+    }
+
+    static func scan(_ result: JSONValue?) -> [EngineeringArtifactReference] {
+        guard let result else { return [] }
+        let formats = ["pdf", "svg", "dxf", "dwg", "png", "ifc", "step", "stp", "iges", "igs"]
+        let engineeringTerms = ["pfd", "pid", "p&id", "drawing", "layout", "engineering", "flowsheet", "equipment", "plot_plan", "plotplan", "cad", "diagram"]
+        var output: [EngineeringArtifactReference] = []
+
+        for (path, raw) in result.flattenedScalars(limit: 8000) {
+            let joined = (path + " " + raw).lowercased()
+            guard engineeringTerms.contains(where: { joined.contains($0) }) else { continue }
+            guard let ext = formats.first(where: { joined.contains("." + $0) }) else { continue }
+
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            let url: URL?
+            if let candidate = URL(string: trimmed), let scheme = candidate.scheme?.lowercased(), scheme == "https" || scheme == "http" {
+                url = candidate
+            } else {
+                url = nil
+            }
+
+            output.append(.init(label: path, raw: raw, format: ext.uppercased(), directURL: url))
+        }
+
+        var seen = Set<String>()
+        return output.filter { seen.insert($0.raw + "|" + $0.label).inserted }
     }
 }
 
