@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import QuickLook
 
 struct DAGStageInspectorView: View {
     @EnvironmentObject private var app: AppModel
@@ -9,6 +10,8 @@ struct DAGStageInspectorView: View {
     @Binding var selectedStageID: String
     @State private var selectedProjectID: UUID?
     @State private var query = ""
+    @State private var previewURL: URL?
+    @State private var stageExportRequested = false
 
     private var stages: [DAGStageDescriptor] {
         let runtime = runtimeDeclaredStages()
@@ -74,6 +77,7 @@ struct DAGStageInspectorView: View {
                 stageAuthority
                 if let selectedStageResult {
                     returnedStageOutput(selectedStageResult)
+                    stageDeliverables(selectedStageResult)
                 } else {
                     noStagePayload
                 }
@@ -85,6 +89,15 @@ struct DAGStageInspectorView: View {
             .padding(22)
         }
         .background(AuroraTheme.background)
+        .quickLookPreview($previewURL)
+        .onChange(of: selectedStageID) { _, _ in
+            stageExportRequested = false
+            previewURL = nil
+        }
+        .onChange(of: app.lastExportURL) { _, newValue in
+            guard stageExportRequested, let newValue else { return }
+            previewURL = newValue
+        }
     }
 
     private var hero: some View {
@@ -314,6 +327,63 @@ struct DAGStageInspectorView: View {
                 }
             }
         }
+    }
+
+    private func stageDeliverables(_ result: JSONValue) -> some View {
+        AuroraCard {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Stage Deliverables").font(.headline)
+                        Text("Exports contain only the returned payload for this selected DAG stage and are explicitly marked stage-scoped.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    StatusBadge(text: app.isExporting ? "Exporting" : "Payload verified")
+                }
+
+                HStack(spacing: 9) {
+                    stageExportButton("STAGE PDF", "pdf", "doc.richtext.fill", result)
+                    stageExportButton("STAGE EXCEL", "xlsx", "tablecells.fill", result)
+                    stageExportButton("STAGE WORD", "docx", "doc.text.fill", result)
+                    stageExportButton("STAGE CSV", "csv", "list.bullet.rectangle.fill", result)
+                }
+
+                Text("Export is unavailable when the selected stage is only declared/live-reported without an independently returned stage payload.")
+                    .font(.caption2)
+                    .foregroundStyle(AuroraTheme.warn)
+
+                if stageExportRequested, let url = app.lastExportURL {
+                    HStack {
+                        Image(systemName: "checkmark.seal.fill").foregroundStyle(AuroraTheme.good)
+                        Text(app.lastExportName ?? url.lastPathComponent).font(.caption.monospaced()).lineLimit(1)
+                        Spacer()
+                        Button("Preview") { previewURL = url }.buttonStyle(.bordered)
+                        ShareLink(item: url) { Label("Share", systemImage: "square.and.arrow.up") }
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+        }
+    }
+
+    private func stageExportButton(_ title: String, _ format: String, _ icon: String, _ result: JSONValue) -> some View {
+        Button {
+            guard let project = activeProject else { return }
+            stageExportRequested = true
+            app.exportStage(
+                project: project,
+                stageID: selectedStage.id,
+                stageTitle: selectedStage.title,
+                stageResult: result,
+                format: format
+            )
+        } label: {
+            Label(title, systemImage: icon)
+        }
+        .buttonStyle(.bordered)
+        .disabled(activeProject == nil || app.isExporting)
     }
 
     private var noStagePayload: some View {
@@ -575,4 +645,52 @@ private struct DAGStageOutputRow: Identifiable {
     let id = UUID()
     let path: String
     let value: String
+}
+
+extension AppModel {
+    func exportStage(project: AuroraProject, stageID: String, stageTitle: String, stageResult: JSONValue, format: String) {
+        guard !isExporting else { return }
+        isExporting = true
+        lastError = nil
+
+        let api = AURORAAPI()
+        let safeStage = stageID.replacingOccurrences(of: " ", with: "_")
+        let body = JSONValue.object([
+            "format": .string(format),
+            "filename": .string("AURORA_DAG_" + safeStage + "_" + project.name),
+            "project": project.payload,
+            "designBasis": .object([
+                "stage_id": .string(stageID),
+                "stage_title": .string(stageTitle),
+                "export_scope": .string("single_returned_dag_stage"),
+                "authority": .string("returned_stage_payload_only")
+            ]),
+            "analyses": .array([]),
+            "flowsheet": .object([:]),
+            "diagnostics": .array([]),
+            "result": .object([
+                "stage_id": .string(stageID),
+                "stage_title": .string(stageTitle),
+                "stage_scope": .string("returned_payload"),
+                stageID: stageResult
+            ]),
+            "run": .object([
+                "id": activeJobID.map(JSONValue.string) ?? .null,
+                "origin": .string(activeResultOrigin),
+                "status": .string(runStatus),
+                "scope": .string("dag_stage_deliverable")
+            ])
+        ])
+
+        Task {
+            do {
+                let file = try await api.export(body, format: format)
+                lastExportURL = file.url
+                lastExportName = file.name
+            } catch {
+                lastError = error.localizedDescription
+            }
+            isExporting = false
+        }
+    }
 }
