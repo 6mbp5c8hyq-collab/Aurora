@@ -1,0 +1,82 @@
+name: Runtime Use Ledger Navigation Install
+
+on:
+  push:
+    paths:
+      - '.github/workflows/runtime-use-ledger-nav-install.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install native ledger route in RootView
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('AURORA/RootView.swift')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '        case authority = "Authority Graph"\n        case results = "Results Explorer"\n',
+                  '        case authority = "Authority Graph"\n        case useLedger = "Runtime Use Ledger"\n        case results = "Results Explorer"\n'
+              ),
+              (
+                  '            case .authority: return "point.3.filled.connected.trianglepath.dotted"\n            case .results: return "magnifyingglass.circle.fill"\n',
+                  '            case .authority: return "point.3.filled.connected.trianglepath.dotted"\n            case .useLedger: return "list.bullet.rectangle"\n            case .results: return "magnifyingglass.circle.fill"\n'
+              ),
+              (
+                  '            case .authority: return "DAG, engine, component and asset evidence map"\n            case .results: return "Search every governed output path"\n',
+                  '            case .authority: return "DAG, engine, component and asset evidence map"\n            case .useLedger: return "Observed dispatch and returned-payload evidence"\n            case .results: return "Search every governed output path"\n'
+              ),
+              (
+                  '                case .authority: RuntimeAuthorityGraphView()\n                case .results: ResultsExplorerView()\n',
+                  '                case .authority: RuntimeAuthorityGraphView()\n                case .useLedger: RuntimeUseLedgerView()\n                case .results: ResultsExplorerView()\n'
+              ),
+              (
+                  '                        Section.authority,\n                        Section.results,\n',
+                  '                        Section.authority,\n                        Section.useLedger,\n                        Section.results,\n'
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'RootView anchor mismatch count={count}: {old[:70]!r}')
+              text = text.replace(old, new, 1)
+
+          required = [
+              'case useLedger = "Runtime Use Ledger"',
+              'case .useLedger: return "list.bullet.rectangle"',
+              'case .useLedger: return "Observed dispatch and returned-payload evidence"',
+              'case .useLedger: RuntimeUseLedgerView()',
+              'Section.useLedger,',
+          ]
+          for marker in required:
+              if text.count(marker) != 1:
+                  raise SystemExit(f'ledger navigation marker mismatch: {marker}')
+
+          path.write_text(text)
+          PY
+
+          git diff --check
+          git diff -- AURORA/RootView.swift
+
+      - name: Commit native ledger navigation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add AURORA/RootView.swift
+          git commit -m 'Expose runtime use ledger in native workspace'
+          git push
