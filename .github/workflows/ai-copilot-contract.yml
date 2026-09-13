@@ -90,3 +90,30 @@ jobs:
             test "$code" = "503"
             jq -e '.ok == false and .error == "ai_gateway_not_configured"' ai-chat-empty.json
           fi
+
+      - name: One-time real OpenAI response smoke when configured
+        shell: bash
+        run: |
+          set -euo pipefail
+          configured=$(cat ai-configured.txt)
+          test "$configured" = "true"
+          code=$(curl --silent --show-error \
+            --max-time 180 \
+            --output ai-chat-live.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data '{"message":"Connectivity smoke test only. Reply briefly that AURORA Copilot is online. Do not call tools and do not make a scientific claim.","mode":"standard","allow_execution":false,"history":[]}' \
+            "$AURORA_BACKEND/api/ai/chat")
+          echo "HTTP=$code"
+          cat ai-chat-live.json
+          test "$code" = "200"
+          jq -e '
+            .ok == true and
+            (.answer | type == "string" and length > 0) and
+            .authority == "ai_interpretation_over_aurora_context" and
+            .governance.execution_authorized == false and
+            .governance.ai_is_not_scientific_authority == true and
+            .governance.aurora_runtime_results_remain_authoritative_for_computed_outputs == true and
+            (.tool_events | type == "array" and length == 0)
+          ' ai-chat-live.json
