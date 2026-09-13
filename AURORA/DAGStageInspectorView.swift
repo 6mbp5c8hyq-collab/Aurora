@@ -658,7 +658,8 @@ extension AppModel {
         let body = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_DAG_" + safeStage + "_" + project.name),
-            "project": project.payload,
+            "project": project.canonicalProject,
+            "inputGovernance": project.canonicalInputGovernance,
             "designBasis": .object([
                 "stage_id": .string(stageID),
                 "stage_title": .string(stageTitle),

@@ -401,7 +401,8 @@ extension AppModel {
         let body = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_Digital_Twin_Evidence_" + project.name),
-            "project": project.payload,
+            "project": project.canonicalProject,
+            "inputGovernance": project.canonicalInputGovernance,
             "designBasis": .object([
                 "export_scope": .string("returned_digital_twin_payload_evidence"),
                 "authority": .string("active_result_returned_values_only"),
