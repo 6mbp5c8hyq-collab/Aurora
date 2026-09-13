@@ -1,0 +1,72 @@
+name: Digital Twin Authority Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-digital-twin-authority-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  digital-twin-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify governed Digital Twin evidence export
+        run: |
+          set -euo pipefail
+          cat > payload.json <<'JSON'
+          {
+            "format": "csv",
+            "filename": "AURORA_CI_Digital_Twin_Evidence",
+            "project": {"name": "CI digital twin authority contract"},
+            "designBasis": {
+              "export_scope": "returned_digital_twin_payload_evidence",
+              "authority": "active_result_returned_values_only",
+              "connectivity_rule": "reported_path_presence_only",
+              "control_authority_rule": "explicit_returned_control_fields_only",
+              "actuation_verification": "not_performed_by_ios_client",
+              "control_posture": "Non-actuating state reported"
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "result": {
+              "operating_envelope": [
+                {"path": "digital_twin.operating_envelope.feed_tph.max", "value": "120"}
+              ],
+              "recommendations": [
+                {"path": "digital_twin.recommended_setpoint.feed_tph", "value": "105"}
+              ],
+              "connectivity_evidence": [
+                {"path": "digital_twin.opc_ua.status", "value": "reported"}
+              ],
+              "control_authority_fields": [
+                {"path": "digital_twin.actuation_enabled", "value": "false"}
+              ],
+              "raw_twin_payload": {
+                "operating_envelope": {"feed_tph": {"max": 120}},
+                "recommended_setpoint": {"feed_tph": 105},
+                "opc_ua": {"status": "reported"},
+                "actuation_enabled": false
+              }
+            },
+            "run": {"id": null, "origin": "ci_contract", "status": "contract_test", "scope": "digital_twin_authority_workspace"}
+          }
+          JSON
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output digital-twin.csv \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @payload.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s digital-twin.csv
+          bytes=$(wc -c < digital-twin.csv)
+          test "$bytes" -gt 20
+          echo "digital twin CSV bytes=$bytes"
