@@ -1,0 +1,94 @@
+name: Input Governance Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-input-governance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governed-input-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify governed input source contract
+        run: |
+          set -euo pipefail
+          test -s AURORA/GovernedInputWorkflowView.swift
+          test -s AURORA/InputWorkflowView.swift
+          grep -q 'GovernedInputWorkflowView()' AURORA/InputWorkflowView.swift
+          grep -q 'measured_requires_nonempty_source_reference' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'measured_claim_source_missing' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'server_parsed_input_not_automatically_measured' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'user_declared_design_basis' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'design_intent_not_as_built' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'SEMANTIC RELEVANCE ONLY' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'NO COMPLETENESS SCORE' AURORA/GovernedInputWorkflowView.swift
+
+      - name: Verify production preflight accepts governed payload
+        run: |
+          set -euo pipefail
+          cat > governed-input.json <<'JSON'
+          {
+            "payload": {
+              "project_id": "ci-governed-input",
+              "project_name": "CI Governed Input",
+              "feed_tph": 80.0,
+              "declared_family": "phosphate",
+              "target_component": "P2O5",
+              "target_grade": 35.0,
+              "notes": "CI contract",
+              "analyses": {
+                "quick_assays": {
+                  "P2O5": 20.1,
+                  "P80_um": 250.0
+                },
+                "quick_assays_authority": "field_level_metadata",
+                "quick_assay_metadata": {
+                  "P2O5": {
+                    "requested_authority": "measured",
+                    "effective_authority": "measured_source_tagged",
+                    "source_reference": "CI-LAB-001",
+                    "unit": "%",
+                    "governance_rule": "measured_requires_nonempty_source_reference"
+                  },
+                  "P80_um": {
+                    "requested_authority": "estimated",
+                    "effective_authority": "estimated",
+                    "source_reference": "",
+                    "unit": "µm",
+                    "governance_rule": "measured_requires_nonempty_source_reference"
+                  }
+                },
+                "input_governance": {
+                  "design_basis_authority": "user_declared_design_basis",
+                  "quick_assay_rule": "field_level_authority_with_measured_source_requirement",
+                  "server_import_rule": "server_parsed_input_not_automatically_measured"
+                }
+              },
+              "flowsheet": {
+                "units": ["ROM Feed", "Scrubbing", "Desliming", "Flotation", "Product", "Tailings"],
+                "authority": "user_declared_process_route",
+                "topology_status": "design_intent_not_as_built"
+              }
+            }
+          }
+          JSON
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output preflight.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @governed-input.json \
+            "$AURORA_BACKEND/api/validate")
+          test "$status" = "200"
+          jq -e 'type == "object"' preflight.json
+          echo "preflight response:"
+          jq '.' preflight.json
