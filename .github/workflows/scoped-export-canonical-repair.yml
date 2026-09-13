@@ -1,0 +1,66 @@
+name: Scoped Export Canonical Repair
+
+on:
+  push:
+    paths:
+      - '.github/workflows/scoped-export-canonical-repair.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Normalize scoped export project contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          files = [
+              Path('AURORA/EngineWorkspaceHubView.swift'),
+              Path('AURORA/DAGStageInspectorView.swift'),
+              Path('AURORA/GovernedOperationsTwinView.swift'),
+          ]
+          old = '            "project": project.payload,\n'
+          new = (
+              '            "project": project.canonicalProject,\n'
+              '            "inputGovernance": project.canonicalInputGovernance,\n'
+          )
+
+          for path in files:
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly 1 legacy scoped-export project payload, found {count}')
+              text = text.replace(old, new, 1)
+              if '"project": project.payload' in text:
+                  raise SystemExit(f'{path}: legacy nested project payload still present')
+              if text.count('"project": project.canonicalProject') < 1:
+                  raise SystemExit(f'{path}: canonical project field missing after repair')
+              if text.count('"inputGovernance": project.canonicalInputGovernance') < 1:
+                  raise SystemExit(f'{path}: input governance field missing after repair')
+              path.write_text(text)
+          PY
+
+      - name: Verify targeted diff only
+        shell: bash
+        run: |
+          git diff --check
+          git diff -- AURORA/EngineWorkspaceHubView.swift AURORA/DAGStageInspectorView.swift AURORA/GovernedOperationsTwinView.swift
+          test "$(git diff --name-only | wc -l | tr -d ' ')" = "3"
+
+      - name: Commit canonical scoped export repair
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add AURORA/EngineWorkspaceHubView.swift AURORA/DAGStageInspectorView.swift AURORA/GovernedOperationsTwinView.swift
+          git commit -m 'Fix canonical scoped export project contract'
+          git push
