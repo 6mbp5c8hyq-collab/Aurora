@@ -37,7 +37,7 @@ jobs:
           cat > governed-input.json <<'JSON'
           {
             "payload": {
-              "project_id": "ci-governed-input",
+              "project_id": "11111111-2222-3333-4444-555555555555",
               "project_name": "CI Governed Input",
               "feed_tph": 80.0,
               "declared_family": "phosphate",
@@ -88,7 +88,7 @@ jobs:
             -H 'Content-Type: application/json' \
             --data-binary @governed-input.json \
             "$AURORA_BACKEND/api/validate")
+          echo "HTTP status=$status"
+          cat preflight.json
           test "$status" = "200"
           jq -e 'type == "object"' preflight.json
-          echo "preflight response:"
-          jq '.' preflight.json
