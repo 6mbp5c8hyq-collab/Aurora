@@ -1,0 +1,59 @@
+name: AURORA Copilot Navigation Install
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch RootView navigation
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('AURORA/RootView.swift')
+          s = p.read_text()
+          replacements = [
+              ('        case execution = "Run AURORA"\n        case dag = "DAG Observatory"',
+               '        case execution = "Run AURORA"\n        case copilot = "AURORA Copilot"\n        case dag = "DAG Observatory"'),
+              ('            case .execution: return "play.circle.fill"\n            case .dag:',
+               '            case .execution: return "play.circle.fill"\n            case .copilot: return "sparkles.rectangle.stack.fill"\n            case .dag:'),
+              ('            case .execution: return "Preflight and canonical governed run"\n            case .dag:',
+               '            case .execution: return "Preflight and canonical governed run"\n            case .copilot: return "Industrial AI over governed AURORA tools and evidence"\n            case .dag:'),
+              ('                case .execution: ExecutionControlView()\n                case .dag:',
+               '                case .execution: ExecutionControlView()\n                case .copilot: AURORACopilotView()\n                case .dag:'),
+              ('                        Section.execution,\n                        Section.dag,',
+               '                        Section.execution,\n                        Section.copilot,\n                        Section.dag,'),
+          ]
+          for old, new in replacements:
+              if new in s:
+                  continue
+              if old not in s:
+                  raise SystemExit(f'missing expected RootView anchor: {old!r}')
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+      - name: Verify navigation patch
+        run: |
+          set -euo pipefail
+          grep -Fq 'case copilot = "AURORA Copilot"' AURORA/RootView.swift
+          grep -Fq 'case .copilot: AURORACopilotView()' AURORA/RootView.swift
+          grep -Fq 'Section.copilot,' AURORA/RootView.swift
+      - name: Commit patch if needed
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- AURORA/RootView.swift; then
+            echo 'RootView already patched'
+            exit 0
+          fi
+          git config user.name 'AURORA CI'
+          git config user.email 'actions@users.noreply.github.com'
+          git add AURORA/RootView.swift
+          git commit -m 'Wire AURORA Copilot into native navigation'
+          git push
