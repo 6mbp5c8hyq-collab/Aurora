@@ -10,6 +10,7 @@ struct RootView: View {
         case dashboard = "Command Center"
         case projects = "Input Workflow"
         case execution = "Run AURORA"
+        case copilot = "AURORA Copilot"
         case dag = "DAG Observatory"
         case scenarios = "Scenarios & Optimization"
         case operations = "Operations & Digital Twin"
@@ -33,6 +34,7 @@ struct RootView: View {
             case .dashboard: return "square.grid.2x2.fill"
             case .projects: return "folder.badge.gearshape"
             case .execution: return "play.circle.fill"
+            case .copilot: return "sparkles.rectangle.stack.fill"
             case .dag: return "point.3.connected.trianglepath.dotted"
             case .scenarios: return "slider.horizontal.3"
             case .operations: return "dot.radiowaves.left.and.right"
@@ -56,6 +58,7 @@ struct RootView: View {
             case .dashboard: return "Live runtime and vault posture"
             case .projects: return "Ore evidence and process route"
             case .execution: return "Preflight and canonical governed run"
+            case .copilot: return "Industrial AI over governed AURORA tools and evidence"
             case .dag: return "Declared stages, live trace and stage payloads"
             case .scenarios: return "Governed variants and run comparison"
             case .operations: return "Envelope, controls and twin state"
@@ -142,6 +145,7 @@ struct RootView: View {
                 case .dashboard: CommandCenterView()
                 case .projects: InputWorkflowView()
                 case .execution: ExecutionControlView()
+                case .copilot: AURORACopilotView()
                 case .dag: DAGStageInspectorView(selectedStageID: $selectedDagStageID)
                 case .scenarios: ScenarioOptimizationView()
                 case .operations: OperationsTwinView()
@@ -202,6 +206,7 @@ struct RootView: View {
                         Section.dashboard,
                         Section.projects,
                         Section.execution,
+                        Section.copilot,
                         Section.dag,
                         Section.scenarios,
                         Section.operations,
