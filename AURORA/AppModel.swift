@@ -251,8 +251,16 @@ final class AppModel: ObservableObject {
         targetGrade: Double
     ) -> JSONValue {
         guard case .object(var fields) = project.payload else { return project.payload }
-        fields["feed_tph"] = .number(max(feedTPH, 0))
-        fields["target_grade"] = .number(max(targetGrade, 0))
+
+        if let projectValue = fields["project"], case .object(var projectFields) = projectValue {
+            projectFields["feedTph"] = .number(max(feedTPH, 0))
+            fields["project"] = .object(projectFields)
+        }
+        if let designValue = fields["designBasis"], case .object(var designFields) = designValue {
+            designFields["targetGrade"] = .number(max(targetGrade, 0))
+            fields["designBasis"] = .object(designFields)
+        }
+
         fields["scenario"] = .object([
             "name": .string(name),
             "base_project_id": .string(project.id.uuidString),
@@ -346,22 +354,6 @@ final class AppModel: ObservableObject {
         ])
     }
 
-    private func exportEvidence(from raw: JSONValue) -> JSONValue {
-        switch raw {
-        case .array:
-            return raw
-        case .object(let object):
-            for key in ["analyses", "evidence", "oreEvidence", "records"] {
-                if let value = object[key], case .array = value {
-                    return value
-                }
-            }
-            return .array([])
-        default:
-            return .array([])
-        }
-    }
-
     private func exportDiagnostics(from result: JSONValue?) -> JSONValue {
         guard let result else { return .array([]) }
         for key in ["diagnostics", "warnings", "findings", "problem_register", "problems"] {
@@ -387,22 +379,17 @@ final class AppModel: ObservableObject {
         guard !isExporting else { return }
         isExporting = true
         lastError = nil
-        let decodedAnalyses = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.analysesJSON.utf8))) ?? .array([])
-        let analyses = exportEvidence(from: decodedAnalyses)
-        let flowsheet = (try? JSONDecoder().decode(JSONValue.self, from: Data(project.flowsheetJSON.utf8))) ?? .object(["units": .array([])])
         let diagnostics = exportDiagnostics(from: activeResult)
         let runReference = exportRunReference(from: activeResult)
 
         let directBody = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_" + project.name),
-            "project": project.payload,
-            "designBasis": .object([
-                "target_component": .string(project.targetComponent),
-                "target_grade": .number(project.targetGrade)
-            ]),
-            "analyses": analyses,
-            "flowsheet": flowsheet,
+            "project": project.canonicalProject,
+            "designBasis": project.canonicalDesignBasis,
+            "analyses": project.canonicalAnalyses,
+            "flowsheet": project.canonicalFlowsheet,
+            "inputGovernance": project.canonicalInputGovernance,
             "diagnostics": diagnostics,
             "result": activeResult ?? .object([:]),
             "run": .object([
