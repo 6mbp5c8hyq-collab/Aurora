@@ -1,0 +1,95 @@
+name: Runtime Use Ledger Contract
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-runtime-use-ledger-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runtime-use-ledger-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify native evidence-bound workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f AURORA/RuntimeUseLedgerView.swift
+          grep -Fq '/api/runtime/use-ledger' AURORA/RuntimeUseLedgerView.swift
+          grep -Fq 'case useLedger = "Runtime Use Ledger"' AURORA/RootView.swift
+          grep -Fq 'case .useLedger: RuntimeUseLedgerView()' AURORA/RootView.swift
+          grep -Fq 'Section.useLedger,' AURORA/RootView.swift
+          grep -Fq 'No semantic component or resource association is promoted to observed use.' AURORA/RuntimeUseLedgerView.swift
+          grep -Fq 'The ledger intentionally stays empty when runtime proof is absent.' AURORA/RuntimeUseLedgerView.swift
+
+      - name: Verify live ledger governance boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error --retry 4 --retry-delay 2 \
+            --output ledger.json \
+            --write-out '%{http_code}' \
+            "$AURORA_BACKEND/api/runtime/use-ledger?limit=100")
+          test "$status" = "200"
+          jq -e '
+            .ok == true and
+            .revision == "AURORA-RUNTIME-USE-LEDGER-2026.09.13-1" and
+            (.events | type == "array") and
+            (.summary | type == "object") and
+            .summary.component_use_count == 0 and
+            .summary.resource_use_count == 0 and
+            .governance.semantic_association_is_use_evidence == false and
+            .governance.registered_engine_is_use_evidence == false and
+            .governance.python_component_name_is_use_evidence == false and
+            .governance.component_use_instrumentation == "not_installed" and
+            .governance.resource_read_instrumentation == "not_installed" and
+            .governance.call_graph_inference == "prohibited" and
+            all(.events[]?; (.evidence_class == "observed_dispatch" or .evidence_class == "returned_payload_presence")) and
+            all(.events[]?; (.target_type != "python_component" and .target_type != "scientific_asset"))
+          ' ledger.json
+
+      - name: Verify selected-engine dispatch evidence from a persisted job
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 4 \
+            "$AURORA_BACKEND/api/jobs/recent" -o jobs.json
+          JOB_ID=$(jq -r '[.jobs[]? | select(((.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule // "") | length) > 0) | (.job_id // .jobId // .id)][0] // empty' jobs.json)
+          ENGINE_ID=$(jq -r '[.jobs[]? | select(((.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule // "") | length) > 0) | (.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule)][0] // empty' jobs.json)
+          test -n "$JOB_ID"
+          test -n "$ENGINE_ID"
+          curl --fail --silent --show-error --retry 4 \
+            "$AURORA_BACKEND/api/runtime/use-ledger?job_id=$JOB_ID" -o job-ledger.json
+          jq -e --arg job "$JOB_ID" --arg engine "$ENGINE_ID" '
+            .ok == true and
+            (.events | type == "array") and
+            (any(.events[]?; .run_id == $job and .target_type == "canonical_runtime" and .evidence_class == "observed_dispatch")) and
+            (any(.events[]?; .run_id == $job and .target_type == "registered_engine" and .engine_id == $engine and .evidence_class == "observed_dispatch" and .proof_type == "explicit_requested_module_dispatch")) and
+            all(.events[]?; .target_type != "python_component" and .target_type != "scientific_asset")
+          ' job-ledger.json
+
+      - name: Verify DAG fan-out evidence without per-engine dispatch inference
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 4 \
+            "$AURORA_BACKEND/api/dag/runs/recent" -o dags.json
+          RUN_ID=$(jq -r '[.runs[]? | select(((.run_id // .runId // .id // "") | length) > 0) | (.run_id // .runId // .id)][0] // empty' dags.json)
+          test -n "$RUN_ID"
+          curl --fail --silent --show-error --retry 4 \
+            "$AURORA_BACKEND/api/runtime/use-ledger?run_id=$RUN_ID" -o dag-ledger.json
+          jq -e --arg run "$RUN_ID" '
+            .ok == true and
+            (.events | type == "array") and
+            (any(.events[]?; .run_id == $run and .target_type == "canonical_runtime" and .evidence_class == "observed_dispatch" and .proof_type == "dag_engine_fanout_entered_canonical_executor")) and
+            all(.events[]?; (.target_type != "registered_engine" or .evidence_class != "observed_dispatch")) and
+            all(.events[]?; .target_type != "python_component" and .target_type != "scientific_asset")
+          ' dag-ledger.json
