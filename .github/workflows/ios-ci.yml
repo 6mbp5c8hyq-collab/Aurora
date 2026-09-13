@@ -135,6 +135,37 @@ jobs:
             (.governance | type == "object")
           ' platform-databases.json
 
+      - name: Verify runtime component registry authority boundary
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 --max-time 300 \
+            "$AURORA_BACKEND/api/platform/components?limit=8000" -o platform-components.json
+          jq -e '
+            (.ok == true) and
+            (.revision | type == "string") and
+            (.execution_engine_count >= 1) and
+            (.execution_engines | type == "array") and
+            (.component_count >= 1) and
+            (.components | type == "array") and
+            (.role_counts | type == "object") and
+            (.syntax_counts | type == "object") and
+            (.governance | type == "object") and
+            (all(.components[]?; .execution_authority == false)) and
+            (all(.execution_engines[]?; .authority == "registered_execution_engine"))
+          ' platform-components.json
+          engine=$(jq -r '.execution_engines[0].id' platform-components.json)
+          test -n "$engine"
+          curl --fail --silent --show-error --retry 3 --retry-delay 1 --max-time 300 \
+            --get --data-urlencode "domain=$engine" --data-urlencode "limit=8000" \
+            "$AURORA_BACKEND/api/platform/components" -o domain-components.json
+          jq -e --arg engine "$engine" '
+            (.ok == true) and
+            (.query.domain == $engine) and
+            (.components | type == "array") and
+            (all(.components[]?; (.domain_links | type == "array") and ((.domain_links | index($engine)) != null))) and
+            (all(.components[]?; .execution_authority == false))
+          ' domain-components.json
+
       - name: Verify every engine resource filter contract
         run: |
           set -euo pipefail
