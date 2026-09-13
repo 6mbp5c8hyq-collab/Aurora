@@ -1,0 +1,76 @@
+name: Results Workspace Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-results-workspace-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  filtered-export-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify filtered result subset export
+        run: |
+          set -euo pipefail
+          cat > filtered-export.json <<'JSON'
+          {
+            "format": "csv",
+            "filename": "AURORA_CI_Filtered_Results",
+            "project": {
+              "name": "CI filtered result contract",
+              "feed_tph": 1.0
+            },
+            "designBasis": {
+              "export_scope": "filtered_returned_result_paths",
+              "authority": "active_result_returned_values_only",
+              "engine_filter": "thermodynamics",
+              "domain_filter": "thermodynamics",
+              "semantic_filter": "chemistry_geochemistry",
+              "query_filter": "pH",
+              "numeric_only": true,
+              "visible_path_count": 1
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "result": {
+              "scope": "filtered_returned_result_paths",
+              "rows": [
+                {
+                  "path": "thermodynamics.water.pH",
+                  "value": "7.1",
+                  "domain": "thermodynamics",
+                  "engine_id": "thermodynamics",
+                  "semantic_family": "chemistry_geochemistry",
+                  "numeric_value": 7.1
+                }
+              ]
+            },
+            "run": {
+              "id": null,
+              "origin": "ci_contract",
+              "status": "contract_test",
+              "scope": "results_workspace_filtered_subset"
+            }
+          }
+          JSON
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output filtered-result.csv \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @filtered-export.json \
+            "$AURORA_BACKEND/api/exports")
+
+          test "$status" = "200"
+          test -s filtered-result.csv
+          bytes=$(wc -c < filtered-result.csv)
+          test "$bytes" -gt 20
+          echo "filtered results CSV bytes=$bytes"
