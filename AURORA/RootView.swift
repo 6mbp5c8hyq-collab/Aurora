@@ -18,6 +18,7 @@ struct RootView: View {
         case catalog = "Data & Model Catalog"
         case components = "Component Registry"
         case authority = "Authority Graph"
+        case useLedger = "Runtime Use Ledger"
         case results = "Results Explorer"
         case balances = "Stream & Balance"
         case evidence = "Evidence & QA"
@@ -40,6 +41,7 @@ struct RootView: View {
             case .catalog: return "server.rack"
             case .components: return "shippingbox.and.arrow.backward.fill"
             case .authority: return "point.3.filled.connected.trianglepath.dotted"
+            case .useLedger: return "list.bullet.rectangle"
             case .results: return "magnifyingglass.circle.fill"
             case .balances: return "arrow.left.arrow.right.square.fill"
             case .evidence: return "checkmark.shield.fill"
@@ -62,6 +64,7 @@ struct RootView: View {
             case .catalog: return "Runtime databases, models and references"
             case .components: return "Python runtime census and authority boundary"
             case .authority: return "DAG, engine, component and asset evidence map"
+            case .useLedger: return "Observed dispatch and returned-payload evidence"
             case .results: return "Search every governed output path"
             case .balances: return "Streams, conservation and closure"
             case .evidence: return "Provenance, validation and uncertainty"
@@ -147,6 +150,7 @@ struct RootView: View {
                 case .catalog: PlatformCatalogView()
                 case .components: RuntimeComponentRegistryView()
                 case .authority: RuntimeAuthorityGraphView()
+                case .useLedger: RuntimeUseLedgerView()
                 case .results: ResultsExplorerView()
                 case .balances: ProcessBalanceView()
                 case .evidence: EvidenceCenterView()
@@ -206,6 +210,7 @@ struct RootView: View {
                         Section.catalog,
                         Section.components,
                         Section.authority,
+                        Section.useLedger,
                         Section.results,
                         Section.balances,
                         Section.evidence,
