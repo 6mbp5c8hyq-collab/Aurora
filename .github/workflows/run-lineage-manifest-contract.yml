@@ -1,0 +1,139 @@
+name: Run Lineage Manifest Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-run-lineage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lineage-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify lineage source boundary
+        run: |
+          set -euo pipefail
+          test -s AURORA/RunLineageManifestView.swift
+          grep -q 'execution_identity_and_returned_path_presence_only' AURORA/RunLineageManifestView.swift
+          grep -q 'not_inferred_from_persistence_or_path_presence' AURORA/RunLineageManifestView.swift
+          grep -q 'currently_selected_project_context_not_independent_persisted_run_proof' AURORA/RunLineageManifestView.swift
+          grep -q 'NO QUALITY SCORE' AURORA/RunLineageManifestView.swift
+          grep -q 'returned_path_presence_only_not_pass_status' AURORA/RunLineageManifestView.swift
+          grep -q 'RunLineageManifestView()' AURORA/DeliverablesCenterView.swift
+
+      - name: Build lineage-only export fixture
+        run: |
+          set -euo pipefail
+          cat > lineage-base.json <<'JSON'
+          {
+            "filename": "AURORA_CI_Run_Lineage",
+            "project": {
+              "id": "99999999-2222-3333-4444-555555555555",
+              "name": "CI Run Lineage",
+              "oreType": "phosphate",
+              "feedTph": 80.0
+            },
+            "designBasis": {
+              "export_scope": "run_lineage_manifest",
+              "authority": "execution_identity_and_returned_path_presence_only",
+              "scientific_validation_claim": "not_inferred_from_persistence_or_path_presence",
+              "project_context_relationship": "currently_selected_project_context"
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "inputGovernance": {
+              "runtime_projection": "canonical_analysis_array",
+              "measured_rule": "measured_requires_nonempty_source_reference"
+            },
+            "result": {
+              "run_lineage_manifest": {
+                "manifest_type": "run_lineage_manifest",
+                "authority": "execution_identity_and_returned_path_presence_only",
+                "scientific_validation_claim": "not_inferred_from_persistence_or_path_presence",
+                "run_reference": "ci-lineage-reference",
+                "persistence_kind": "DAG run reference",
+                "execution_scope": "canonical_dag_or_loaded_run",
+                "requested_engine": null,
+                "active_result_origin": "ci_contract",
+                "reported_status": "completed",
+                "returned_stage_count": 5,
+                "returned_engine_count": 2,
+                "returned_engine_ids": ["ore_intelligence", "conservation"],
+                "returned_path_presence": {
+                  "validation": {
+                    "present": true,
+                    "returned_path": "validation",
+                    "interpretation": "returned_path_presence_only_not_pass_status"
+                  },
+                  "uncertainty": {
+                    "present": false,
+                    "returned_path": null,
+                    "interpretation": "returned_path_presence_only_not_pass_status"
+                  }
+                },
+                "selected_project_basis": {
+                  "project_id": "99999999-2222-3333-4444-555555555555",
+                  "project_name": "CI Run Lineage",
+                  "relationship": "currently_selected_project_context_not_independent_persisted_run_proof",
+                  "runtime_analysis_rows": 2,
+                  "measured_rows": 1,
+                  "estimated_rows": 1,
+                  "unqualified_rows": 0,
+                  "source_missing_rows": 0,
+                  "route_unit_count": 6
+                }
+              }
+            },
+            "run": {
+              "id": "ci-lineage-reference",
+              "origin": "ci_contract",
+              "status": "completed",
+              "scope": "run_lineage_manifest"
+            }
+          }
+          JSON
+          jq -e '.result | keys == ["run_lineage_manifest"]' lineage-base.json
+          jq -e '.result.run_lineage_manifest.scientific_validation_claim == "not_inferred_from_persistence_or_path_presence"' lineage-base.json
+
+      - name: Verify lineage CSV export
+        run: |
+          set -euo pipefail
+          jq '. + {format:"csv"}' lineage-base.json > lineage-csv.json
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output lineage.csv \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @lineage-csv.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s lineage.csv
+          bytes=$(wc -c < lineage.csv)
+          test "$bytes" -gt 20
+          echo "lineage CSV bytes=$bytes"
+
+      - name: Verify lineage PDF export
+        run: |
+          set -euo pipefail
+          jq '. + {format:"pdf"}' lineage-base.json > lineage-pdf.json
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output lineage.pdf \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @lineage-pdf.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s lineage.pdf
+          bytes=$(wc -c < lineage.pdf)
+          test "$bytes" -gt 100
+          head -c 4 lineage.pdf | grep -q '%PDF'
+          echo "lineage PDF bytes=$bytes"
