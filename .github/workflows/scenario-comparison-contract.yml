@@ -1,0 +1,91 @@
+name: Scenario Comparison Contract
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-scenario-comparison-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scenario-comparison-export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - name: Verify dimension-safe scenario comparison export
+        run: |
+          set -euo pipefail
+          cat > payload.json <<'JSON'
+          {
+            "format": "csv",
+            "filename": "AURORA_CI_Scenario_Comparison",
+            "project": {"name": "CI scenario comparison contract"},
+            "designBasis": {
+              "export_scope": "persisted_scenario_comparison",
+              "authority": "returned_persisted_run_values_only",
+              "comparison_rule": "like_metric_and_like_unit_only_for_numeric_charting",
+              "closure_rule": "explicit_closure_status_only",
+              "residual_rule": "reported_separately_not_promoted_to_closure",
+              "optimization_authority": "scenario_screening_unless_runtime_explicitly_returns_objective_constraints_and_feasibility",
+              "run_count": 2
+            },
+            "analyses": [],
+            "flowsheet": {},
+            "diagnostics": [],
+            "result": {
+              "scenario_runs": [
+                {
+                  "run_id": "ci-run-a",
+                  "label": "Scenario A",
+                  "status": "completed",
+                  "claim_ceiling": "screening",
+                  "explicit_closure_status": "closed",
+                  "stage_count": 5,
+                  "validation_path_count": 1,
+                  "uncertainty_path_count": 1,
+                  "applicability_ood_path_count": 1,
+                  "kpis": [
+                    {"name": "Recovery", "value": 87.0, "unit": "%", "comparison_key": "recovery|%"}
+                  ],
+                  "residual_observations": [
+                    {"path": "conservation.mass_balance.residual_pct", "value": "0.2"}
+                  ]
+                },
+                {
+                  "run_id": "ci-run-b",
+                  "label": "Scenario B",
+                  "status": "completed",
+                  "claim_ceiling": "screening",
+                  "explicit_closure_status": "closed",
+                  "stage_count": 5,
+                  "validation_path_count": 1,
+                  "uncertainty_path_count": 1,
+                  "applicability_ood_path_count": 1,
+                  "kpis": [
+                    {"name": "Recovery", "value": 89.0, "unit": "%", "comparison_key": "recovery|%"}
+                  ],
+                  "residual_observations": [
+                    {"path": "conservation.mass_balance.residual_pct", "value": "0.1"}
+                  ]
+                }
+              ]
+            },
+            "run": {"id": null, "origin": "ci_contract", "status": "contract_test", "scope": "scenario_comparison_workspace"}
+          }
+          JSON
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output scenario-comparison.csv \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @payload.json \
+            "$AURORA_BACKEND/api/exports")
+          test "$status" = "200"
+          test -s scenario-comparison.csv
+          bytes=$(wc -c < scenario-comparison.csv)
+          test "$bytes" -gt 20
+          echo "scenario comparison CSV bytes=$bytes"
