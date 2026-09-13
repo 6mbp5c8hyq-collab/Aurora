@@ -375,7 +375,8 @@ struct RuntimeAuthorityGraphView: View {
                 .background(color.opacity(0.12), in: Capsule())
         }
         .padding(12)
-        .frame(width: 205, minHeight: 128, alignment: .leading)
+        .frame(width: 205, alignment: .leading)
+        .frame(minHeight: 128, alignment: .leading)
         .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 13))
     }
 
