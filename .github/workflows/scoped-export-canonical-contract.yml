@@ -1,0 +1,146 @@
+name: Scoped Export Canonical Contract
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+concurrency:
+  group: aurora-scoped-export-canonical-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scoped-export-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Swift scoped-export source boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          contracts = {
+              'AURORA/EngineWorkspaceHubView.swift': [
+                  'func exportEngine(',
+                  '"project": project.canonicalProject',
+                  '"inputGovernance": project.canonicalInputGovernance',
+                  'single_governed_engine',
+              ],
+              'AURORA/DAGStageInspectorView.swift': [
+                  'func exportStage(',
+                  '"project": project.canonicalProject',
+                  '"inputGovernance": project.canonicalInputGovernance',
+                  'single_returned_dag_stage',
+                  'returned_stage_payload_only',
+              ],
+              'AURORA/GovernedOperationsTwinView.swift': [
+                  'func exportDigitalTwinEvidence(',
+                  '"project": project.canonicalProject',
+                  '"inputGovernance": project.canonicalInputGovernance',
+                  'returned_digital_twin_payload_evidence',
+                  'active_result_returned_values_only',
+                  'not_performed_by_ios_client',
+              ],
+          }
+
+          for filename, required in contracts.items():
+              text = Path(filename).read_text()
+              if '"project": project.payload' in text:
+                  raise SystemExit(f'{filename}: legacy nested project.payload export contract returned')
+              for marker in required:
+                  if marker not in text:
+                      raise SystemExit(f'{filename}: required scoped-export marker missing: {marker}')
+          PY
+
+      - name: Build canonical scoped-export fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > project.json <<'JSON'
+          {
+            "id": "77777777-2222-3333-4444-555555555555",
+            "name": "CI Scoped Export",
+            "oreType": "phosphate",
+            "feedTph": 80.0
+          }
+          JSON
+          cat > governance.json <<'JSON'
+          {
+            "runtime_projection": "canonical_analysis_array",
+            "measured_rule": "measured_requires_nonempty_source_reference",
+            "unqualified_rule": "numeric_without_source_or_explicit_estimate_is_not_measured"
+          }
+          JSON
+
+          jq -n \
+            --slurpfile project project.json \
+            --slurpfile governance governance.json \
+            '{
+              filename:"AURORA_CI_Scoped_Engine",
+              format:"csv",
+              project:$project[0],
+              inputGovernance:$governance[0],
+              designBasis:{engine_id:"ore_intelligence",engine_title:"Ore Intelligence",export_scope:"single_governed_engine"},
+              analyses:[],flowsheet:{},diagnostics:[],
+              result:{engine_id:"ore_intelligence",engine_title:"Ore Intelligence",ore_intelligence:{status:"returned",ci_value:1.0}},
+              run:{id:"ci-engine-scope",origin:"ci_contract",status:"completed",scope:"engine_workspace"}
+            }' > engine.json
+
+          jq -n \
+            --slurpfile project project.json \
+            --slurpfile governance governance.json \
+            '{
+              filename:"AURORA_CI_Scoped_Stage",
+              format:"csv",
+              project:$project[0],
+              inputGovernance:$governance[0],
+              designBasis:{stage_id:"ore_diagnosis",stage_title:"Ore Diagnosis",export_scope:"single_returned_dag_stage",authority:"returned_stage_payload_only"},
+              analyses:[],flowsheet:{},diagnostics:[],
+              result:{stage_id:"ore_diagnosis",stage_title:"Ore Diagnosis",stage_scope:"returned_payload",ore_diagnosis:{status:"returned",ci_value:1.0}},
+              run:{id:"ci-stage-scope",origin:"ci_contract",status:"completed",scope:"dag_stage_deliverable"}
+            }' > stage.json
+
+          jq -n \
+            --slurpfile project project.json \
+            --slurpfile governance governance.json \
+            '{
+              filename:"AURORA_CI_Scoped_Digital_Twin",
+              format:"csv",
+              project:$project[0],
+              inputGovernance:$governance[0],
+              designBasis:{export_scope:"returned_digital_twin_payload_evidence",authority:"active_result_returned_values_only",connectivity_rule:"reported_path_presence_only",control_authority_rule:"explicit_returned_control_fields_only",actuation_verification:"not_performed_by_ios_client",control_posture:"CI non-actuating fixture"},
+              analyses:[],flowsheet:{},diagnostics:[],
+              result:{operating_envelope:[],recommendations:[],connectivity_evidence:[],control_authority_fields:[],raw_twin_payload:{status:"returned",ci_value:1.0}},
+              run:{id:"ci-twin-scope",origin:"ci_contract",status:"completed",scope:"digital_twin_authority_workspace"}
+            }' > twin.json
+
+          for fixture in engine.json stage.json twin.json; do
+            jq -e '.project.feedTph == 80.0' "$fixture"
+            jq -e '.project.project == null' "$fixture"
+            jq -e '.inputGovernance.runtime_projection == "canonical_analysis_array"' "$fixture"
+          done
+
+      - name: Verify live scoped exports
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fixture in engine stage twin; do
+            status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+              --output "$fixture.csv" \
+              --write-out '%{http_code}' \
+              -H 'Accept: application/json' \
+              -H 'Content-Type: application/json' \
+              --data-binary @"$fixture.json" \
+              "$AURORA_BACKEND/api/exports")
+            test "$status" = "200"
+            test -s "$fixture.csv"
+            bytes=$(wc -c < "$fixture.csv")
+            test "$bytes" -gt 20
+            echo "$fixture scoped export bytes=$bytes"
+          done
