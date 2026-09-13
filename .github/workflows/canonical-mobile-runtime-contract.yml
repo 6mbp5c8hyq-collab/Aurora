@@ -9,9 +9,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  canonical-dag-contract:
+  canonical-runtime-contract:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 15
     env:
       AURORA_BACKEND: https://todo-app-production-afcc.up.railway.app
     steps:
@@ -108,9 +108,8 @@ jobs:
               --write-out '%{http_code}' \
               "$AURORA_BACKEND/api/dag/runs/$RUN_ID")
             test "$status" = "200"
-            jq -e --arg id "$RUN_ID" '((.run_id // .runId // .id) == $id) or ((.run // {}).id == $id)' dag-run.json >/dev/null || true
             state=$(jq -r '(.status // .state // .run.status // "") | ascii_downcase' dag-run.json)
-            echo "attempt=$attempt state=$state"
+            echo "dag attempt=$attempt state=$state"
             case "$state" in
               completed|success|succeeded|failed|error|blocked|cancelled)
                 terminal=1
@@ -122,7 +121,7 @@ jobs:
           test "$terminal" = "1"
           jq -e 'type == "object"' dag-run.json
 
-      - name: Verify run appears in Result Vault listing
+      - name: Verify DAG run appears in Result Vault listing
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --retry 3 \
@@ -132,3 +131,80 @@ jobs:
             (.runs | type == "array") and
             (any(.runs[]?; ((.run_id // .runId // .id // "") == $id)))
           ' recent.json
+
+      - name: Resolve a registered execution engine
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 \
+            "$AURORA_BACKEND/api/platform/capabilities" -o capabilities.json
+          ENGINE_ID=$(jq -r '[.engines[]? | select(.id == "ore_intelligence") | .id][0] // .engines[0].id // empty' capabilities.json)
+          test -n "$ENGINE_ID"
+          echo "ENGINE_ID=$ENGINE_ID" >> "$GITHUB_ENV"
+          echo "selected registered engine=$ENGINE_ID"
+
+      - name: Submit canonical payload through selected-engine job path
+        run: |
+          set -euo pipefail
+          jq --arg engine "$ENGINE_ID" \
+            '. + {runMode:"module", requested_module:$engine, question:"Execute the selected governed AURORA engine and return evidence-bound outputs."}' \
+            payload.json > module-payload.json
+          jq -n --arg engine "$ENGINE_ID" --slurpfile payload module-payload.json \
+            '{operation:"canonical_mobile_execute", requested_module:$engine, payload:$payload[0]}' > job-request.json
+
+          # Mirrors AURORAAPI.run(): validate the wrapper, then create the job.
+          curl --fail --silent --show-error --retry 3 --retry-delay 2 \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @job-request.json \
+            "$AURORA_BACKEND/api/validate" -o module-validate.json
+          jq -e '.ok == true and .status == "input_valid"' module-validate.json
+
+          status=$(curl --silent --show-error --retry 3 --retry-delay 2 \
+            --output job-created.json \
+            --write-out '%{http_code}' \
+            -H 'Accept: application/json' \
+            -H 'Content-Type: application/json' \
+            --data-binary @job-request.json \
+            "$AURORA_BACKEND/api/jobs")
+          test "$status" = "200" -o "$status" = "201" -o "$status" = "202"
+          cat job-created.json
+          JOB_ID=$(jq -r '.job_id // .jobId // .id // empty' job-created.json)
+          test -n "$JOB_ID"
+          echo "JOB_ID=$JOB_ID" >> "$GITHUB_ENV"
+
+      - name: Verify selected-engine job reaches a terminal persisted state
+        run: |
+          set -euo pipefail
+          terminal=0
+          for attempt in $(seq 1 90); do
+            status=$(curl --silent --show-error --retry 3 --retry-delay 1 \
+              --output engine-job.json \
+              --write-out '%{http_code}' \
+              "$AURORA_BACKEND/api/jobs/$JOB_ID?preview=1")
+            test "$status" = "200"
+            state=$(jq -r '(.status // .state // .platform_status // "") | ascii_downcase' engine-job.json)
+            echo "engine attempt=$attempt state=$state"
+            case "$state" in
+              completed|success|succeeded|failed|error|blocked|cancelled)
+                terminal=1
+                break
+                ;;
+            esac
+            sleep 4
+          done
+          test "$terminal" = "1"
+          jq -e --arg engine "$ENGINE_ID" '
+            (type == "object") and
+            ((.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule // "") == $engine)
+          ' engine-job.json
+
+      - name: Verify selected-engine job appears in persisted job listing
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 3 \
+            "$AURORA_BACKEND/api/jobs/recent" -o jobs-recent.json
+          jq -e --arg id "$JOB_ID" '
+            (.ok == true) and
+            (.jobs | type == "array") and
+            (any(.jobs[]?; ((.job_id // .jobId // .id // "") == $id)))
+          ' jobs-recent.json
