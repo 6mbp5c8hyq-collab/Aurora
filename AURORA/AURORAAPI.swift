@@ -95,6 +95,40 @@ actor AURORAAPI {
         try await call("/api/health")
     }
 
+    // MARK: - Chemistry Authority V2
+
+    func chemistryStatus() async throws -> JSONValue {
+        try await call("/api/chemistry/status")
+    }
+
+    func chemistryResolve(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/resolve", method: "POST", body: payload)
+    }
+
+    func chemistryExecute(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/execute", method: "POST", body: payload)
+    }
+
+    func chemistrySpeciate(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/speciate", method: "POST", body: payload)
+    }
+
+    func chemistryNernst(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/redox/nernst", method: "POST", body: payload)
+    }
+
+    func phreeqcStatus() async throws -> JSONValue {
+        try await call("/api/chemistry/phreeqc/status")
+    }
+
+    func phreeqcExecute(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/phreeqc/execute", method: "POST", body: payload)
+    }
+
+    func chemistrySelftest() async throws -> JSONValue {
+        try await call("/api/chemistry/selftest")
+    }
+
     func auditSummary() async throws -> JSONValue {
         try await call("/api/audit")
     }
