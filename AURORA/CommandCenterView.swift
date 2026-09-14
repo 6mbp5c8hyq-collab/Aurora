@@ -5,10 +5,20 @@ struct CommandCenterView: View {
         GovernedCommandCenterView()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    NavigationLink {
-                        ChemistryWorkbenchView()
+                    Menu {
+                        NavigationLink {
+                            ChemistryWorkbenchView()
+                        } label: {
+                            Label("Chemistry Suite", systemImage: "atom")
+                        }
+
+                        NavigationLink {
+                            ChemistryAuthorityInspectorView()
+                        } label: {
+                            Label("Chemistry Authority", systemImage: "checkmark.shield")
+                        }
                     } label: {
-                        Label("Chemistry Suite", systemImage: "atom")
+                        Label("Chemistry", systemImage: "atom")
                     }
                 }
             }
