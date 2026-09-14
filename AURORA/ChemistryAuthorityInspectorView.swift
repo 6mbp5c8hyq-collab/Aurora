@@ -149,8 +149,8 @@ struct ChemistryAuthorityInspectorView: View {
         defer { isLoadingStatus = false }
         do {
             let value = try await api.chemistryStatus()
-            statusText = pretty(value)
-            statusOK = value.firstBool(["ok"]) ?? true
+            statusText = value.prettyString()
+            statusOK = boolValue(value.recursiveFind("ok")) ?? true
         } catch {
             statusOK = false
             lastError = error.localizedDescription
@@ -166,8 +166,8 @@ struct ChemistryAuthorityInspectorView: View {
         defer { isRunningSelftest = false }
         do {
             let value = try await api.chemistrySelftest()
-            selftestText = pretty(value)
-            selftestOK = value.firstBool(["ok"]) ?? false
+            selftestText = value.prettyString()
+            selftestOK = boolValue(value.recursiveFind("ok")) ?? false
         } catch {
             selftestOK = false
             lastError = error.localizedDescription
@@ -175,14 +175,16 @@ struct ChemistryAuthorityInspectorView: View {
         }
     }
 
-    private func pretty(_ value: JSONValue) -> String {
-        do {
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-            let data = try encoder.encode(value)
-            return String(decoding: data, as: UTF8.self)
-        } catch {
-            return String(describing: value)
+    private func boolValue(_ value: JSONValue?) -> Bool? {
+        guard let value else { return nil }
+        switch value {
+        case .bool(let flag): return flag
+        case .string(let text):
+            if text.lowercased() == "true" { return true }
+            if text.lowercased() == "false" { return false }
+            return nil
+        default:
+            return nil
         }
     }
 }
