@@ -9,7 +9,7 @@ enum ExecutionSubmodelScopeV3 {
         "flotation": ["flotation"],
         "magnetic_gravity": ["magnetic separation", "gravity separation"],
         "hydrometallurgy": ["leaching"],
-        "water_circuit": ["scrubbing", "desliming", "hydrocyclone", "thickening", "filtration"]
+        "water_circuit": ["scrubbing", "desliming", "hydrocyclone", "flotation", "leaching", "thickening", "filtration"]
     ]
 
     static func enrich(_ value: JSONValue) -> JSONValue {
@@ -49,8 +49,8 @@ enum ExecutionSubmodelScopeV3 {
                 "allowedUnitOperations": .array(allowed.map(JSONValue.string)),
                 "blockedUnitOperations": .array(blocked.map(JSONValue.string)),
                 "strictResultScope": .bool(strict),
-                "scopeAuthority": .string("user_declared_process_graph"),
-                "scopeFailurePolicy": .string("fail_closed_on_blocked_submodel_output")
+                "scopeAuthority": .string(strict ? "user_declared_process_graph" : "engine_eligibility_without_explicit_submodel_node"),
+                "scopeFailurePolicy": .string(strict ? "fail_closed_on_blocked_submodel_output" : "engine_family_only_no_submodel_claim")
             ])
         }
 
