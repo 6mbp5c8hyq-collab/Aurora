@@ -141,6 +141,29 @@ struct ScientificValidationAggregate: Equatable {
         )
     }
 
+    static func canonicalAuthorityEnvelope(result: JSONValue?) -> JSONValue {
+        let summary = parse(result: result)
+        return .object([
+            "revision": .string("AURORA-SCIENTIFIC-VALIDATION-PRESENTATION-V1"),
+            "metadata_present": .bool(summary.metadataPresent),
+            "engineering_grade_eligible": .bool(summary.engineeringGradeEligible),
+            "engine_count": .number(Double(summary.engineCount)),
+            "classified_engine_count": .number(Double(summary.classifiedEngineCount)),
+            "blocking_engines": .array(summary.blockingEngines.map(JSONValue.string)),
+            "result_authority": .string(summary.resultAuthority),
+            "export_policy": .string(
+                summary.engineeringGradeEligible
+                    ? "engineering_grade_eligible_only_within_declared_validation_envelopes"
+                    : "numeric_results_preserved_but_not_engineering_grade"
+            ),
+            "required_mark": .string(
+                summary.engineeringGradeEligible
+                    ? "SCIENTIFIC VALIDATION AUTHORITY VERIFIED"
+                    : "NOT ENGINEERING-GRADE · SCIENTIFIC VALIDATION REQUIRED"
+            )
+        ])
+    }
+
     private static func findAggregate(in value: JSONValue) -> [String: JSONValue]? {
         switch value {
         case .object(let object):
