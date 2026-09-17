@@ -45,7 +45,7 @@ actor AURORAAPI {
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let governedBody = ScientificProjectContractV3.enrich(body)
+            let governedBody = SafeScientificProjectContractV3.enrich(body)
             request.httpBody = governedBody.data()
         }
 
@@ -225,7 +225,7 @@ actor AURORAAPI {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        let governedBody = ScientificProjectContractV3.enrich(body)
+        let governedBody = SafeScientificProjectContractV3.enrich(body)
         guard let encoded = governedBody.data() else { throw APIError.invalidResponse }
         request.httpBody = encoded
 
