@@ -16,10 +16,15 @@ enum ExecutionGovernancePolicyV3 {
     }
 
     static func directDispatchBlockReason(_ value: JSONValue) -> String? {
-        guard let requested = firstString(value, keys: ["requested_module", "requestedModule", "engine_id", "engineId"]),
-              !requested.isEmpty,
-              let governance = recursiveFind(value, key: "executionGovernance"),
+        guard let governance = recursiveFind(value, key: "executionGovernance"),
               case .object(let object) = governance else { return nil }
+
+        if object["dagExecutable"] == .bool(false) {
+            return "AURORA execution is blocked because the process graph is not executable: \(object["blockReason"]?.stringValue ?? "graph/policy validation failed")"
+        }
+
+        guard let requested = firstString(value, keys: ["requested_module", "requestedModule", "engine_id", "engineId"]),
+              !requested.isEmpty else { return nil }
 
         if let blocked = object["blockedEngines"], case .array(let rows) = blocked {
             for row in rows {
@@ -29,6 +34,23 @@ enum ExecutionGovernancePolicyV3 {
             }
         }
         return nil
+    }
+
+    static func governedFullRunBypassReason(_ value: JSONValue) -> String? {
+        guard let governance = recursiveFind(value, key: "executionGovernance"),
+              case .object(let object) = governance,
+              object["serverEnforcementRequired"] == .bool(true) else { return nil }
+
+        if object["dagExecutable"] == .bool(false) {
+            return object["blockReason"]?.stringValue ?? "Process graph is not executable."
+        }
+
+        if let requested = firstString(value, keys: ["requested_module", "requestedModule", "engine_id", "engineId"]),
+           !requested.isEmpty {
+            return nil
+        }
+
+        return "Governed full-project execution must use the selective DAG fan-out; /api/jobs requires an explicit eligible requested_module."
     }
 
     private static func applyRawDiagnosisPolicy(to object: inout [String: JSONValue]) {
