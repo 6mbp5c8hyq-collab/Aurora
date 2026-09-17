@@ -504,6 +504,11 @@ enum ProcessExecutionGovernanceV3 {
             .joined(separator: " ")
     }
 
+    private static func arrayStrings(_ value: JSONValue?) -> [String] {
+        guard let value, case .array(let rows) = value else { return [] }
+        return rows.compactMap(\.stringValue)
+    }
+
     private static func bool(_ value: JSONValue?) -> Bool? {
         guard let value else { return nil }
         if case .bool(let flag) = value { return flag }
