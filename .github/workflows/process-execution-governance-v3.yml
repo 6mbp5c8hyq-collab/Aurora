@@ -96,20 +96,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c '
-          import json, sys
-          data=json.load(sys.stdin)
-          candidates=[]
-          for runtime, devices in data.get("devices", {}).items():
-              if "iOS" not in runtime:
-                  continue
-              for device in devices:
-                  if device.get("isAvailable") and str(device.get("name","")).startswith("iPhone"):
-                      candidates.append(device)
-          if not candidates:
-              raise SystemExit("No available iPhone simulator")
-          print(candidates[0]["udid"])
-          ')
+          DEVICE_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; data=json.load(sys.stdin); candidates=[d for runtime,devices in data.get("devices",{}).items() if "iOS" in runtime for d in devices if d.get("isAvailable") and str(d.get("name","")).startswith("iPhone")]; assert candidates, "No available iPhone simulator"; print(candidates[0]["udid"])')
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
           echo "Selected simulator: $DEVICE_ID"
 
