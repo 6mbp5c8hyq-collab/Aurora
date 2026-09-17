@@ -86,7 +86,7 @@ struct EngineExplorerView: View {
                     Text("Engine Observatory").font(.largeTitle.bold())
                     Text("Backend-governed AURORA engine contract")
                         .foregroundStyle(.secondary)
-                    Text("The catalog is read from the runtime audit contract when available; the native fallback mirrors the current canonical contract.")
+                    Text("The catalog is read from the runtime audit contract when available; the native fallback mirrors the current canonical contract. Scientific claim authority is fail-closed per returned engine result.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -155,7 +155,7 @@ struct EngineExplorerView: View {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Governed Engine Execution").font(.headline)
-                    Text("Runs the selected engine through canonical_mobile_execute using the selected project basis.")
+                    Text("Runs the selected engine through canonical_mobile_execute using the selected project basis. A successful numerical run does not imply scientific validation.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -313,6 +313,7 @@ private struct EngineCard: View {
     let action: () -> Void
 
     var body: some View {
+        let validation = ScientificValidationPresentation.parse(engineResult: result)
         Button(action: action) {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
@@ -335,6 +336,11 @@ private struct EngineCard: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
                     .lineLimit(3)
+
+                if result != nil {
+                    ScientificValidationBanner(presentation: validation, compact: true)
+                }
+
                 HStack {
                     Text(result == nil ? (engine.observed ? "Observed in runtime" : "Declared contract") : "Open engine result")
                         .font(.caption.bold())
@@ -345,7 +351,7 @@ private struct EngineCard: View {
                 .foregroundStyle(result == nil ? .secondary : AuroraTheme.accent)
             }
             .padding(16)
-            .frame(maxWidth: .infinity, minHeight: 210, alignment: .topLeading)
+            .frame(maxWidth: .infinity, minHeight: result == nil ? 210 : 285, alignment: .topLeading)
             .background(
                 RoundedRectangle(cornerRadius: 18)
                     .fill(isSelected ? AuroraTheme.accent.opacity(0.13) : AuroraTheme.panel)
@@ -389,18 +395,25 @@ private struct EngineResultDetail: View {
                 }
 
                 if let result {
+                    ScientificValidationBanner(
+                        presentation: ScientificValidationPresentation.parse(engineResult: result)
+                    )
+
                     let kpis = ResultTools.kpis(result)
                     if !kpis.isEmpty {
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
-                            ForEach(kpis) { item in
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(item.name).font(.caption).foregroundStyle(.secondary)
-                                    Text("\(item.value.formatted(.number.precision(.fractionLength(0...3)))) \(item.unit)")
-                                        .font(.title3.bold())
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Returned numeric KPIs").font(.caption.bold()).foregroundStyle(.secondary)
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 10)], spacing: 10) {
+                                ForEach(kpis) { item in
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(item.name).font(.caption).foregroundStyle(.secondary)
+                                        Text("\(item.value.formatted(.number.precision(.fractionLength(0...3)))) \(item.unit)")
+                                            .font(.title3.bold())
+                                    }
+                                    .padding(10)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 12))
                                 }
-                                .padding(10)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(AuroraTheme.panel2, in: RoundedRectangle(cornerRadius: 12))
                             }
                         }
                     }
