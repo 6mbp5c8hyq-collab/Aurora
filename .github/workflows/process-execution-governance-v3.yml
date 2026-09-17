@@ -1,0 +1,60 @@
+name: Process Execution Governance V3
+
+on:
+  pull_request:
+    paths:
+      - 'AURORA/ProcessExecutionGovernanceV3.swift'
+      - 'AURORA/ExecutionGovernanceErrorBridge.swift'
+      - 'AURORA/AURORAAPI.swift'
+      - 'AURORA/CommandCenterView.swift'
+      - '.github/workflows/process-execution-governance-v3.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aurora-process-execution-governance-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  invariant-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify graph and eligibility invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=AURORA/ProcessExecutionGovernanceV3.swift
+          API=AURORA/AURORAAPI.swift
+          test -s "$FILE"
+          grep -Fq 'AURORA-PROCESS-GRAPH-V3-2026.09.17' "$FILE"
+          grep -Fq 'AURORA-ENGINE-ELIGIBILITY-V3-2026.09.17' "$FILE"
+          grep -Fq 'fromNode' "$FILE"
+          grep -Fq 'toNode' "$FILE"
+          grep -Fq 'recycle' "$FILE"
+          grep -Fq 'blockedEngines' "$FILE"
+          grep -Fq 'eligibleEngines' "$FILE"
+          grep -Fq 'explicit dry mode' "$FILE"
+          grep -Fq 'ProcessExecutionGovernanceV3.dispatchBlockReason' "$API"
+          grep -Fq 'path == "/api/dag/runs"' "$API"
+          echo 'Process Execution Governance V3 invariant guard: PASS'
+
+  simulator-compile:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Compile native iOS application
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project AURORA.xcodeproj \
+            -scheme AURORA \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
