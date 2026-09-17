@@ -31,6 +31,50 @@ enum ResultTools {
         result?.firstString(["claim_ceiling", "claimCeiling"])
     }
 
+    static func engineResult(in result: JSONValue?, engineID: String) -> JSONValue? {
+        guard let result, !engineID.isEmpty else { return nil }
+
+        if case .object(let root) = result {
+            if root["active_engine"]?.stringValue == engineID,
+               let direct = root[engineID] {
+                return direct
+            }
+
+            if let engineResults = object(root["engine_results"]),
+               let direct = engineResults[engineID] {
+                return direct
+            }
+
+            if let resultObject = object(root["result"]) {
+                if let engineResults = object(resultObject["engine_results"]),
+                   let direct = engineResults[engineID] {
+                    return direct
+                }
+                if let direct = resultObject[engineID] {
+                    return direct
+                }
+            }
+
+            if let direct = root[engineID], !looksLikeValidationReceipt(direct) {
+                return direct
+            }
+        }
+
+        return findEngineResultExcludingValidation(result, engineID: engineID)
+    }
+
+    static func scientificClaimLabel(_ result: JSONValue?) -> String {
+        let aggregate = ScientificValidationAggregate.parse(result: result)
+        if aggregate.metadataPresent {
+            return aggregate.engineeringGradeEligible
+                ? "ENGINEERING-GRADE ELIGIBLE IN DECLARED VALIDATION ENVELOPES"
+                : "NOT ENGINEERING-GRADE · SCIENTIFIC VALIDATION BLOCKERS PRESENT"
+        }
+        let engine = ScientificValidationPresentation.parse(engineResult: result)
+        if engine.metadataPresent { return engine.engineeringLabel }
+        return "VALIDATION METADATA MISSING · NOT ENGINEERING-GRADE"
+    }
+
     static func kpis(_ result: JSONValue?) -> [KPI] {
         guard let result else { return [] }
         let candidates: [(String, [String], String)] = [
@@ -127,6 +171,39 @@ enum ResultTools {
         var seen = Set<String>()
         return output.filter { seen.insert($0.raw).inserted }
     }
+
+    private static func object(_ value: JSONValue?) -> [String: JSONValue]? {
+        guard let value, case .object(let object) = value else { return nil }
+        return object
+    }
+
+    private static func looksLikeValidationReceipt(_ value: JSONValue) -> Bool {
+        guard case .object(let object) = value else { return false }
+        return object["effective_status"] != nil
+            && object["engineering_grade_eligible"] != nil
+            && object["result_authority"] != nil
+    }
+
+    private static func findEngineResultExcludingValidation(_ value: JSONValue, engineID: String) -> JSONValue? {
+        switch value {
+        case .object(let object):
+            for (key, child) in object {
+                if key == "scientific_validation" || key == "engine_receipts" { continue }
+                if key == engineID, !looksLikeValidationReceipt(child) { return child }
+            }
+            for (key, child) in object {
+                if key == "scientific_validation" || key == "engine_receipts" { continue }
+                if let found = findEngineResultExcludingValidation(child, engineID: engineID) { return found }
+            }
+        case .array(let values):
+            for child in values {
+                if let found = findEngineResultExcludingValidation(child, engineID: engineID) { return found }
+            }
+        default:
+            break
+        }
+        return nil
+    }
 }
 
 enum NativeReport {
@@ -142,9 +219,13 @@ enum NativeReport {
                 var y: CGFloat = 40
                 let title: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 23, weight: .bold)]
                 let body: [NSAttributedString.Key: Any] = [.font: UIFont.monospacedSystemFont(ofSize: 9.5, weight: .regular)]
+                let claim: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 10.5, weight: .bold)]
 
                 "AURORA — Industrial Project Summary".draw(at: CGPoint(x: 40, y: y), withAttributes: title)
-                y += 42
+                y += 38
+                let claimText = ResultTools.scientificClaimLabel(result)
+                claimText.draw(in: CGRect(x: 40, y: y, width: 515, height: 34), withAttributes: claim)
+                y += 34
                 for line in [
                     project.name,
                     "Ore: \(project.declaredFamily)",
@@ -177,7 +258,8 @@ enum NativeReport {
         }
 
         let rows = result?.flattenedScalars(limit: 5000) ?? []
-        let text = "path,value\n" + rows.map { "\(escape($0.0)),\(escape($0.1))" }.joined(separator: "\n")
+        let claimRow = "\(escape("scientific_claim_authority")),\(escape(ResultTools.scientificClaimLabel(result)))"
+        let text = "path,value\n" + claimRow + "\n" + rows.map { "\(escape($0.0)),\(escape($0.1))" }.joined(separator: "\n")
         do {
             try text.write(to: url, atomically: true, encoding: .utf8)
             return url
