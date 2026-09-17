@@ -2,11 +2,17 @@ import SwiftUI
 
 struct CommandCenterView: View {
     @State private var showScientificProjectBasisV3 = false
+    @State private var showExecutionEligibilityV3 = false
 
     var body: some View {
         GovernedCommandCenterView()
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button {
+                        showExecutionEligibilityV3 = true
+                    } label: {
+                        Label("Execution Eligibility V3", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
                     Button {
                         showScientificProjectBasisV3 = true
                     } label: {
@@ -19,9 +25,17 @@ struct CommandCenterView: View {
                     ScientificProjectBasisV3View()
                         .toolbar {
                             ToolbarItem(placement: .topBarTrailing) {
-                                Button("Done") {
-                                    showScientificProjectBasisV3 = false
-                                }
+                                Button("Done") { showScientificProjectBasisV3 = false }
+                            }
+                        }
+                }
+            }
+            .sheet(isPresented: $showExecutionEligibilityV3) {
+                NavigationStack {
+                    ProcessGraphEligibilityV3View()
+                        .toolbar {
+                            ToolbarItem(placement: .topBarTrailing) {
+                                Button("Done") { showExecutionEligibilityV3 = false }
                             }
                         }
                 }
