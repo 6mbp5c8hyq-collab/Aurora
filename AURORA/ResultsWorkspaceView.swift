@@ -77,6 +77,7 @@ struct ResultsWorkspaceView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
+                ScientificValidationAggregateBanner(result: app.activeResult)
                 filterPanel
                 summaryGrid
                 semanticDistribution
@@ -231,12 +232,12 @@ struct ResultsWorkspaceView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Filtered Result Deliverables").font(.headline)
-                        Text("Exports contain only the currently visible result paths plus explicit filter metadata and original path/value pairs.")
+                        Text("Exports contain the currently visible result paths plus an immutable scientific-validation authority envelope from the complete active result.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
-                    StatusBadge(text: app.isExporting ? "Exporting" : "Subset scoped")
+                    StatusBadge(text: app.isExporting ? "Exporting" : "Authority preserved")
                 }
 
                 HStack(spacing: 9) {
@@ -478,9 +479,12 @@ extension AppModel {
             ])
         }
 
+        let scientificAuthority = ScientificValidationAggregate.canonicalAuthorityEnvelope(result: activeResult)
+
         let body = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_Filtered_Results_" + project.name),
+            "scientificValidationAuthority": scientificAuthority,
             "project": project.payload,
             "designBasis": .object([
                 "export_scope": .string("filtered_returned_result_paths"),
@@ -490,20 +494,24 @@ extension AppModel {
                 "semantic_filter": .string(semantic),
                 "query_filter": .string(query),
                 "numeric_only": .bool(numericOnly),
-                "visible_path_count": .number(Double(rows.count))
+                "visible_path_count": .number(Double(rows.count)),
+                "scientific_validation_authority": scientificAuthority,
+                "claim_policy": .string("filtered exports may not elevate scientific claim authority above the complete active result")
             ]),
             "analyses": .array([]),
             "flowsheet": .object([:]),
             "diagnostics": .array([]),
             "result": .object([
                 "scope": .string("filtered_returned_result_paths"),
-                "rows": .array(payloadRows)
+                "rows": .array(payloadRows),
+                "scientific_validation_authority": scientificAuthority
             ]),
             "run": .object([
                 "id": activeJobID.map(JSONValue.string) ?? .null,
                 "origin": .string(activeResultOrigin),
                 "status": .string(runStatus),
-                "scope": .string("results_workspace_filtered_subset")
+                "scope": .string("results_workspace_filtered_subset"),
+                "scientific_validation_authority": scientificAuthority
             ])
         ])
 
