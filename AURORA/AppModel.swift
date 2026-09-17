@@ -381,10 +381,12 @@ final class AppModel: ObservableObject {
         lastError = nil
         let diagnostics = exportDiagnostics(from: activeResult)
         let runReference = exportRunReference(from: activeResult)
+        let scientificAuthority = ScientificValidationAggregate.canonicalAuthorityEnvelope(result: activeResult)
 
         let directBody = JSONValue.object([
             "format": .string(format),
             "filename": .string("AURORA_" + project.name),
+            "scientificValidationAuthority": scientificAuthority,
             "project": project.canonicalProject,
             "designBasis": project.canonicalDesignBasis,
             "analyses": project.canonicalAnalyses,
@@ -395,16 +397,21 @@ final class AppModel: ObservableObject {
             "run": .object([
                 "id": activeJobID.map(JSONValue.string) ?? .null,
                 "origin": .string(activeResultOrigin),
-                "status": .string(runStatus)
+                "status": .string(runStatus),
+                "scientific_validation_authority": scientificAuthority
             ])
         ])
 
         var queuedBody = directBody
         if let runReference, case .object(var fields) = directBody {
             fields["run_ref"] = runReference
-            fields["result"] = .object([:])
+            fields["result"] = .object([
+                "scientific_validation_authority": scientificAuthority,
+                "scope": .string("queued_export_authority_envelope")
+            ])
             fields["diagnostics"] = .array([])
             fields["derive_diagnostics_on_server"] = .bool(true)
+            fields["preserve_scientific_validation_authority"] = .bool(true)
             queuedBody = .object(fields)
         }
 
