@@ -405,13 +405,11 @@ final class AppModel: ObservableObject {
         var queuedBody = directBody
         if let runReference, case .object(var fields) = directBody {
             fields["run_ref"] = runReference
-            fields["result"] = .object([
-                "scientific_validation_authority": scientificAuthority,
-                "scope": .string("queued_export_authority_envelope")
-            ])
+            fields["result"] = .object([:])
             fields["diagnostics"] = .array([])
             fields["derive_diagnostics_on_server"] = .bool(true)
             fields["preserve_scientific_validation_authority"] = .bool(true)
+            fields["scientificValidationAuthority"] = scientificAuthority
             queuedBody = .object(fields)
         }
 
