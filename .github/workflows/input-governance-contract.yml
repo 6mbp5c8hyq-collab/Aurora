@@ -23,6 +23,7 @@ jobs:
           test -s AURORA/GovernedInputWorkflowView.swift
           test -s AURORA/InputWorkflowView.swift
           test -s AURORA/Core.swift
+          test -s AURORA/OreDocumentAdmissionV3.swift
           grep -q 'GovernedInputWorkflowView()' AURORA/InputWorkflowView.swift
           grep -q 'measured_requires_nonempty_source_reference' AURORA/GovernedInputWorkflowView.swift
           grep -q 'measured_claim_source_missing' AURORA/GovernedInputWorkflowView.swift
@@ -31,6 +32,10 @@ jobs:
           grep -q 'design_intent_not_as_built' AURORA/GovernedInputWorkflowView.swift
           grep -q 'SEMANTIC RELEVANCE ONLY' AURORA/GovernedInputWorkflowView.swift
           grep -q 'NO COMPLETENESS SCORE' AURORA/GovernedInputWorkflowView.swift
+          grep -q 'AURORA-ORE-DOCUMENT-ADMISSION-V3-2026.09.17' AURORA/OreDocumentAdmissionV3.swift
+          grep -q 'VNRecognizeTextRequest' AURORA/OreDocumentAdmissionV3.swift
+          grep -q 'client_extraction_authority' AURORA/AURORAAPI.swift
+          grep -q 'UNQUALIFIED_REVIEW_REQUIRED' AURORA/AURORAAPI.swift
           grep -q 'var canonicalProject: JSONValue' AURORA/Core.swift
           grep -q 'var canonicalDesignBasis: JSONValue' AURORA/Core.swift
           grep -q 'var canonicalAnalyses: JSONValue' AURORA/Core.swift
@@ -40,6 +45,7 @@ jobs:
           grep -q '"analyses": canonicalAnalyses' AURORA/Core.swift
 
       - name: Verify production preflight accepts canonical governed payload
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
           cat > governed-input.json <<'JSON'
