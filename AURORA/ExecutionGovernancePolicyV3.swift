@@ -2,12 +2,16 @@ import Foundation
 
 enum ExecutionGovernancePolicyV3 {
     static func finalize(_ value: JSONValue) -> JSONValue {
+        ExecutionSubmodelScopeV3.enrich(finalizeBase(value))
+    }
+
+    private static func finalizeBase(_ value: JSONValue) -> JSONValue {
         switch value {
         case .array(let rows):
-            return .array(rows.map(finalize))
+            return .array(rows.map(finalizeBase))
         case .object(let object):
             var out: [String: JSONValue] = [:]
-            for (key, child) in object { out[key] = finalize(child) }
+            for (key, child) in object { out[key] = finalizeBase(child) }
             applyRawDiagnosisPolicy(to: &out)
             return .object(out)
         default:
