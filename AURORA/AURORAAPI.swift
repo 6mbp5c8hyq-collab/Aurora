@@ -45,7 +45,18 @@ actor AURORAAPI {
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            let governedBody = SafeScientificProjectContractV3.enrich(body)
+            let scientificBody = SafeScientificProjectContractV3.enrich(body)
+            let governedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+
+            if let reason = ProcessExecutionGovernanceV3.dispatchBlockReason(governedBody) {
+                throw APIError.executionGovernanceBlocked(reason)
+            }
+            if path == "/api/dag/runs",
+               let governance = governedBody.recursiveFind("executionGovernance"),
+               case .object(let object) = governance,
+               object["dagExecutable"] == .bool(false) {
+                throw APIError.executionGovernanceBlocked(object["blockReason"]?.stringValue ?? "Process graph is not executable.")
+            }
             request.httpBody = governedBody.data()
         }
 
@@ -225,7 +236,8 @@ actor AURORAAPI {
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
-        let governedBody = SafeScientificProjectContractV3.enrich(body)
+        let scientificBody = SafeScientificProjectContractV3.enrich(body)
+        let governedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
         guard let encoded = governedBody.data() else { throw APIError.invalidResponse }
         request.httpBody = encoded
 
