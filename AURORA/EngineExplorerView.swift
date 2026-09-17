@@ -226,9 +226,7 @@ struct EngineExplorerView: View {
     }
 
     private func result(for engine: EngineDefinition) -> JSONValue? {
-        guard let result = app.activeResult else { return nil }
-        return result.recursiveFind(engine.key)
-            ?? result.recursiveFind(engine.key.replacingOccurrences(of: "_", with: ""))
+        ResultTools.engineResult(in: app.activeResult, engineID: engine.key)
     }
 
     private var runtimeContractAvailable: Bool {
