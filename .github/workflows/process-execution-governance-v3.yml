@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - 'AURORA/ProcessExecutionGovernanceV3.swift'
+      - 'AURORA/ExecutionGovernancePolicyV3.swift'
       - 'AURORA/ExecutionGovernanceErrorBridge.swift'
       - 'AURORA/AURORAAPI.swift'
       - 'AURORA/CommandCenterView.swift'
@@ -25,8 +26,10 @@ jobs:
         run: |
           set -euo pipefail
           FILE=AURORA/ProcessExecutionGovernanceV3.swift
+          POLICY=AURORA/ExecutionGovernancePolicyV3.swift
           API=AURORA/AURORAAPI.swift
           test -s "$FILE"
+          test -s "$POLICY"
           grep -Fq 'AURORA-PROCESS-GRAPH-V3-2026.09.17' "$FILE"
           grep -Fq 'AURORA-ENGINE-ELIGIBILITY-V3-2026.09.17' "$FILE"
           grep -Fq 'fromNode' "$FILE"
@@ -35,7 +38,10 @@ jobs:
           grep -Fq 'blockedEngines' "$FILE"
           grep -Fq 'eligibleEngines' "$FILE"
           grep -Fq 'explicit dry mode' "$FILE"
-          grep -Fq 'ProcessExecutionGovernanceV3.dispatchBlockReason' "$API"
+          grep -Fq 'graphless_raw_ore_diagnosis' "$POLICY"
+          grep -Fq 'diagnosticGraphExemption' "$POLICY"
+          grep -Fq 'ExecutionGovernancePolicyV3.finalize' "$API"
+          grep -Fq 'ExecutionGovernancePolicyV3.directDispatchBlockReason' "$API"
           grep -Fq 'path == "/api/dag/runs"' "$API"
           echo 'Process Execution Governance V3 invariant guard: PASS'
 
