@@ -1,0 +1,65 @@
+name: Scientific Project Contract V3
+
+on:
+  pull_request:
+    paths:
+      - 'AURORA/ScientificProjectBasisV3.swift'
+      - 'AURORA/AURORAAPI.swift'
+      - 'AURORA/CommandCenterView.swift'
+      - '.github/workflows/scientific-project-contract-v3.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: aurora-scientific-project-contract-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contract-source-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify V3 canonical contract invariants
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=AURORA/ScientificProjectBasisV3.swift
+          API=AURORA/AURORAAPI.swift
+          UI=AURORA/CommandCenterView.swift
+
+          test -s "$FILE"
+          grep -Fq 'AURORA-SCIENTIFIC-PROJECT-CONTRACT-V3-2026.09.17' "$FILE"
+          grep -Fq 'case dry' "$FILE"
+          grep -Fq 'case wet' "$FILE"
+          grep -Fq 'case hybrid' "$FILE"
+          grep -Fq 'case rawOreDiagnosis' "$FILE"
+          grep -Fq 'case beneficiation' "$FILE"
+          grep -Fq 'targetRecovery' "$FILE"
+          grep -Fq 'maximumImpurityComponent' "$FILE"
+          grep -Fq 'allowedUnitOperations' "$FILE"
+          grep -Fq 'prohibitedUnitOperations' "$FILE"
+          grep -Fq 'return "not_applicable"' "$FILE"
+          grep -Fq 'ScientificProjectContractV3.enrich(body)' "$API"
+          grep -Fq 'ScientificProjectBasisV3View()' "$UI"
+
+          echo 'Scientific Project Contract V3 source guard: PASS'
+
+  simulator-compile:
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Compile native iOS application
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project AURORA.xcodeproj \
+            -scheme AURORA \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO \
+            build
