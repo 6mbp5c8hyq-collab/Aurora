@@ -1,0 +1,100 @@
+name: Scientific Validation Presentation Contract
+
+on:
+  push:
+    branches: [ main, 'repair-phase1/**' ]
+    paths:
+      - 'AURORA/ScientificValidationPresentation.swift'
+      - 'AURORA/EngineExplorerView.swift'
+      - 'AURORA/ResultsWorkspaceView.swift'
+      - 'AURORA/ResultTools.swift'
+      - 'AURORA/AppModel.swift'
+      - 'project.yml'
+      - '.github/workflows/scientific-validation-presentation-contract.yml'
+  pull_request:
+    paths:
+      - 'AURORA/ScientificValidationPresentation.swift'
+      - 'AURORA/EngineExplorerView.swift'
+      - 'AURORA/ResultsWorkspaceView.swift'
+      - 'AURORA/ResultTools.swift'
+      - 'AURORA/AppModel.swift'
+      - 'project.yml'
+      - '.github/workflows/scientific-validation-presentation-contract.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-scientific-validation-presentation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-contract:
+    name: Scientific authority source contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify fail-closed scientific presentation contract
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          presentation = Path("AURORA/ScientificValidationPresentation.swift").read_text()
+          explorer = Path("AURORA/EngineExplorerView.swift").read_text()
+          results = Path("AURORA/ResultsWorkspaceView.swift").read_text()
+          tools = Path("AURORA/ResultTools.swift").read_text()
+          app = Path("AURORA/AppModel.swift").read_text()
+          project = Path("project.yml").read_text()
+
+          required_presentation = [
+              "VALIDATION METADATA MISSING · NOT ENGINEERING-GRADE",
+              "canonicalAuthorityEnvelope",
+              "engineering_grade_eligible",
+              "blocking_engines",
+              "NOT ENGINEERING-GRADE · SCIENTIFIC VALIDATION REQUIRED",
+              "ScientificValidationAggregateBanner",
+          ]
+          for token in required_presentation:
+              assert token in presentation, token
+
+          assert "ScientificValidationBanner(" in explorer
+          assert "ScientificValidationAggregateBanner(result: app.activeResult)" in results
+          assert "scientificValidationAuthority" in results
+          assert "scientific_validation_authority" in results
+          assert "filtered exports may not elevate scientific claim authority" in results
+
+          assert "engineResult(" in tools
+          assert "engine_receipts" in tools
+          assert "scientific_validation" in tools
+          assert "findEngineResultExcludingValidation" in tools
+          assert "scientific_claim_authority" in tools
+
+          assert "scientificValidationAuthority" in app
+          assert "preserve_scientific_validation_authority" in app
+          assert "queued_export_authority_envelope" in app
+
+          assert "- path: AURORA" in project
+          print("AURORA_SCIENTIFIC_VALIDATION_PRESENTATION_SOURCE_PASS")
+          PY
+
+  simulator-build:
+    name: Scientific authority simulator build
+    runs-on: macos-15
+    timeout-minutes: 25
+    needs: source-contract
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Build native iOS app
+        run: |
+          set -o pipefail
+          xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/ScientificValidationDerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: Verify compiled app exists
+        run: |
+          test -d build/ScientificValidationDerivedData/Build/Products/Debug-iphonesimulator/AURORA.app
+          echo "AURORA_SCIENTIFIC_VALIDATION_PRESENTATION_BUILD_PASS"
