@@ -56,7 +56,7 @@ private actor AURORAAIClient {
         guard let http = response as? HTTPURLResponse else { throw AIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             let decoded = try? JSONDecoder().decode(JSONValue.self, from: data)
-            let message = decoded?.firstString(["message", "error"]) ?? String(decoding: data, as: UTF8.self)
+            let message = decoded?.firstString(["reason", "message", "error"]) ?? String(decoding: data, as: UTF8.self)
             throw AIError.http(http.statusCode, message)
         }
         return try JSONDecoder().decode(JSONValue.self, from: data)
@@ -98,6 +98,22 @@ struct AURORACopilotView: View {
             return project
         }
         return projects.first
+    }
+
+    private func governedProjectPayload(_ project: AuroraProject) -> JSONValue {
+        let scientific = SafeScientificProjectContractV3.enrich(project.payload)
+        let graphGoverned = ProcessExecutionGovernanceV3.enrich(scientific)
+        return ExecutionGovernancePolicyV3.finalize(graphGoverned)
+    }
+
+    private var actionGovernanceReady: Bool {
+        guard let project = selectedProject else { return false }
+        let governed = governedProjectPayload(project)
+        guard let governance = governed.recursiveFind("executionGovernance"),
+              case .object(let object) = governance else { return false }
+        return object["dagExecutable"] == .bool(true)
+            && object["scientificBasisState"]?.stringValue == "explicit_v3_basis"
+            && object["serverEnforcementRequired"] == .bool(true)
     }
 
     private var configured: Bool {
@@ -226,16 +242,20 @@ struct AURORACopilotView: View {
                         Toggle(isOn: $allowActions) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Allow AURORA Actions").font(.subheadline.bold())
-                                Text("Expose start-engine / start-DAG tools for this request.")
+                                Text("Request start-engine / start-DAG tools. Scientific V3 governance remains the execution authority.")
                                     .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .disabled(selectedProject == nil)
-                        if allowActions {
-                            Label("Execution requests can create jobs/runs. Creation is not proof of successful scientific completion.", systemImage: "exclamationmark.shield.fill")
+                        .disabled(selectedProject == nil || !actionGovernanceReady)
+                        if allowActions && actionGovernanceReady {
+                            Label("Execution request enabled for an explicit V3 project with an executable governed graph.", systemImage: "checkmark.shield.fill")
                                 .font(.caption2)
-                                .foregroundStyle(AuroraTheme.gold)
+                                .foregroundStyle(AuroraTheme.good)
+                        } else if selectedProject != nil && !actionGovernanceReady {
+                            Label("Actions locked: save an explicit Project Basis V3 and resolve process-graph blockers first.", systemImage: "lock.shield.fill")
+                                .font(.caption2)
+                                .foregroundStyle(AuroraTheme.warn)
                         } else {
                             Label("Read / interpret only", systemImage: "lock.shield.fill")
                                 .font(.caption2)
@@ -248,6 +268,7 @@ struct AURORACopilotView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Authority Boundary").font(.headline)
                         authorityLine("AI interpretation", "Language-model synthesis only")
+                        authorityLine("AI action toggle", "Execution intent only; never scientific authority")
                         authorityLine("AURORA calculated", "Runtime-returned values only")
                         authorityLine("Measured", "Source-tagged evidence only")
                         authorityLine("Component/resource use", "Runtime instrumentation only")
@@ -409,14 +430,15 @@ struct AURORACopilotView: View {
             }
         }
 
+        let executionRequested = allowActions && actionGovernanceReady
         var fields: [String: JSONValue] = [
             "message": .string(text),
             "mode": .string(mode),
-            "allow_execution": .bool(allowActions),
+            "allow_execution": .bool(executionRequested),
             "history": .array(historyRows)
         ]
         if let selectedProject {
-            fields["project"] = selectedProject.payload
+            fields["project"] = governedProjectPayload(selectedProject)
         }
         if let activeRunReference {
             fields["active_run"] = activeRunReference
@@ -432,7 +454,7 @@ struct AURORACopilotView: View {
                 toolCount = 0
             }
             messages.append(CopilotMessage(role: .assistant, text: answer, toolCount: toolCount))
-            if allowActions, toolCount > 0 {
+            if executionRequested, toolCount > 0 {
                 await app.refreshServerState()
             }
         } catch {
