@@ -203,11 +203,34 @@ actor AURORAAPI {
     }
 
     func importOre(data: Data, filename: String) async throws -> JSONValue {
-        let body = JSONValue.object([
+        let baseBody = JSONValue.object([
             "filename": .string(filename),
             "content_base64": .string(data.base64EncodedString())
         ])
-        return try await call("/api/imports/ore", method: "POST", body: body)
+        let first = try await call("/api/imports/ore", method: "POST", body: baseBody)
+
+        guard filename.lowercased().hasSuffix(".pdf"),
+              let recordsValue = first.recursiveFind("records"),
+              case .array(let records) = recordsValue,
+              records.isEmpty else {
+            return first
+        }
+
+        let admission = try await OreDocumentAdmissionV3.extractFallbackText(fromPDF: data)
+        guard admission.isUsable else { return first }
+
+        let retryBody = JSONValue.object([
+            "filename": .string(filename),
+            "content_base64": .string(data.base64EncodedString()),
+            "client_extracted_text": .string(admission.text),
+            "client_extraction_method": .string(admission.mode.rawValue),
+            "client_extraction_revision": .string(OreDocumentAdmissionV3.revision),
+            "client_extraction_page_count": .number(Double(admission.pageCount)),
+            "client_extraction_processed_pages": .number(Double(admission.processedPages)),
+            "client_extraction_truncated": .bool(admission.truncated),
+            "client_extraction_authority": .string("UNQUALIFIED_REVIEW_REQUIRED")
+        ])
+        return try await call("/api/imports/ore", method: "POST", body: retryBody)
     }
 
     func queuedExport(_ body: JSONValue, format: String) async throws -> (url: URL, name: String) {
