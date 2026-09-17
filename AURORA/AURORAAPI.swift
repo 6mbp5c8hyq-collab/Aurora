@@ -46,9 +46,10 @@ actor AURORAAPI {
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             let scientificBody = SafeScientificProjectContractV3.enrich(body)
-            let governedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+            let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+            let governedBody = ExecutionGovernancePolicyV3.finalize(graphGovernedBody)
 
-            if let reason = ProcessExecutionGovernanceV3.dispatchBlockReason(governedBody) {
+            if let reason = ExecutionGovernancePolicyV3.directDispatchBlockReason(governedBody) {
                 throw APIError.executionGovernanceBlocked(reason)
             }
             if path == "/api/dag/runs",
@@ -237,7 +238,8 @@ actor AURORAAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         let scientificBody = SafeScientificProjectContractV3.enrich(body)
-        let governedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+        let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+        let governedBody = ExecutionGovernancePolicyV3.finalize(graphGovernedBody)
         guard let encoded = governedBody.data() else { throw APIError.invalidResponse }
         request.httpBody = encoded
 
