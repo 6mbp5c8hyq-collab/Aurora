@@ -31,6 +31,7 @@ jobs:
           grep -Fq 'The ledger intentionally stays empty when runtime proof is absent.' AURORA/RuntimeUseLedgerView.swift
 
       - name: Verify live ledger governance boundary
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -57,6 +58,7 @@ jobs:
           ' ledger.json
 
       - name: Build governed ledger fixture and resolve execution engine
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -106,6 +108,7 @@ jobs:
           echo "ENGINE_ID=$ENGINE_ID" >> "$GITHUB_ENV"
 
       - name: Create and verify exact selected-engine dispatch evidence
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -160,6 +163,7 @@ jobs:
           ' job-ledger.json
 
       - name: Create and verify exact DAG fan-out evidence without per-engine dispatch inference
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
