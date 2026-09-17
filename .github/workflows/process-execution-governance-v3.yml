@@ -5,6 +5,7 @@ on:
     paths:
       - 'AURORA/ProcessExecutionGovernanceV3.swift'
       - 'AURORA/ExecutionGovernancePolicyV3.swift'
+      - 'AURORA/ExecutionSubmodelScopeV3.swift'
       - 'AURORA/ExecutionGovernanceErrorBridge.swift'
       - 'AURORA/AURORAAPI.swift'
       - 'AURORA/CommandCenterView.swift'
@@ -21,15 +22,17 @@ jobs:
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@v4
-      - name: Verify graph and eligibility invariants
+      - name: Verify graph, eligibility and submodel-scope invariants
         shell: bash
         run: |
           set -euo pipefail
           FILE=AURORA/ProcessExecutionGovernanceV3.swift
           POLICY=AURORA/ExecutionGovernancePolicyV3.swift
+          SCOPE=AURORA/ExecutionSubmodelScopeV3.swift
           API=AURORA/AURORAAPI.swift
           test -s "$FILE"
           test -s "$POLICY"
+          test -s "$SCOPE"
           grep -Fq 'AURORA-PROCESS-GRAPH-V3-2026.09.17' "$FILE"
           grep -Fq 'AURORA-ENGINE-ELIGIBILITY-V3-2026.09.17' "$FILE"
           grep -Fq 'fromNode' "$FILE"
@@ -40,6 +43,12 @@ jobs:
           grep -Fq 'explicit dry mode' "$FILE"
           grep -Fq 'graphless_raw_ore_diagnosis' "$POLICY"
           grep -Fq 'diagnosticGraphExemption' "$POLICY"
+          grep -Fq 'ExecutionSubmodelScopeV3.enrich' "$POLICY"
+          grep -Fq 'AURORA-SUBMODEL-SCOPE-V3-2026.09.17' "$SCOPE"
+          grep -Fq '"classification": ["screening", "desliming", "hydrocyclone"]' "$SCOPE"
+          grep -Fq 'strictResultScope' "$SCOPE"
+          grep -Fq 'fail_closed_on_blocked_submodel_output' "$SCOPE"
+          grep -Fq 'engine_family_only_no_submodel_claim' "$SCOPE"
           grep -Fq 'ExecutionGovernancePolicyV3.finalize' "$API"
           grep -Fq 'ExecutionGovernancePolicyV3.directDispatchBlockReason' "$API"
           grep -Fq 'path == "/api/dag/runs"' "$API"
