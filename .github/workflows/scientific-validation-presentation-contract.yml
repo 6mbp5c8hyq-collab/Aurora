@@ -75,7 +75,8 @@ jobs:
 
           assert "scientificValidationAuthority" in app
           assert "preserve_scientific_validation_authority" in app
-          assert "queued_export_authority_envelope" in app
+          assert 'fields["result"] = .object([:])' in app
+          assert 'fields["scientificValidationAuthority"] = scientificAuthority' in app
 
           assert "- path: AURORA" in project
           print("AURORA_SCIENTIFIC_VALIDATION_PRESENTATION_SOURCE_PASS")
