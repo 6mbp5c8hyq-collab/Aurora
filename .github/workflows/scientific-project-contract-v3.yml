@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - 'AURORA/ScientificProjectBasisV3.swift'
+      - 'AURORA/ScientificProjectContractV3Safe.swift'
+      - 'AURORA/ScientificProjectContractV3Smoke.swift'
+      - 'AURORA/ScientificProjectContractV3SelfTest.swift'
       - 'AURORA/AURORAAPI.swift'
       - 'AURORA/CommandCenterView.swift'
       - '.github/workflows/scientific-project-contract-v3.yml'
@@ -24,10 +27,12 @@ jobs:
         run: |
           set -euo pipefail
           FILE=AURORA/ScientificProjectBasisV3.swift
+          SAFE=AURORA/ScientificProjectContractV3Safe.swift
           API=AURORA/AURORAAPI.swift
           UI=AURORA/CommandCenterView.swift
 
           test -s "$FILE"
+          test -s "$SAFE"
           grep -Fq 'AURORA-SCIENTIFIC-PROJECT-CONTRACT-V3-2026.09.17' "$FILE"
           grep -Fq 'case dry' "$FILE"
           grep -Fq 'case wet' "$FILE"
@@ -39,7 +44,8 @@ jobs:
           grep -Fq 'allowedUnitOperations' "$FILE"
           grep -Fq 'prohibitedUnitOperations' "$FILE"
           grep -Fq 'return "not_applicable"' "$FILE"
-          grep -Fq 'ScientificProjectContractV3.enrich(body)' "$API"
+          grep -Fq 'hasExplicitBasis(projectID: projectID)' "$SAFE"
+          grep -Fq 'SafeScientificProjectContractV3.enrich(body)' "$API"
           grep -Fq 'ScientificProjectBasisV3View()' "$UI"
 
           echo 'Scientific Project Contract V3 source guard: PASS'
