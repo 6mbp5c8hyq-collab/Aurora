@@ -103,6 +103,130 @@ enum ProcessExecutionGovernanceV3 {
         return decisions.sorted { $0.id < $1.id }
     }
 
+    /// Pure deterministic execution-governance receipt for acceptance tests and reproducible
+    /// route proofs. This path never reads UserDefaults and therefore cannot inherit a stale
+    /// project-basis overlay from a device.
+    static func deterministicReceipt(
+        unitOperations: [String],
+        basis: ScientificProjectBasisV3
+    ) -> JSONValue {
+        let rawFlowsheet: JSONValue = .object([
+            "units": .array(unitOperations.map(JSONValue.string))
+        ])
+        let (flowsheet, graph, validation) = compileFlowsheet(rawFlowsheet)
+        let decisions = compileEligibility(graph: graph, validation: validation, basis: basis)
+        let eligible = decisions.filter(\.eligible).map(\.id)
+        let blocked = decisions.filter { !$0.eligible }
+        let hardPolicyBlock = policyBlockers(graph: graph, basis: basis)
+        let allBlockers = validation.blockers + hardPolicyBlock
+        let dagExecutable = allBlockers.isEmpty && validation.nodeCount > 0
+
+        let governance: JSONValue = .object([
+            "revision": .string(compilerRevision),
+            "graphRevision": .string(graphRevision),
+            "authority": .string("deterministic_explicit_basis_acceptance_compiler"),
+            "scientificBasisState": .string("explicit_v3_basis"),
+            "processingMode": .string(basis.processingMode.rawValue),
+            "waterRequirement": .string(basis.processingMode.waterRequirement),
+            "dagExecutable": .bool(dagExecutable),
+            "blockReason": .string(allBlockers.joined(separator: "; ")),
+            "eligibleEngines": .array(eligible.map(JSONValue.string)),
+            "blockedEngines": .array(blocked.map { decision in
+                .object(["id": .string(decision.id), "reason": .string(decision.reason)])
+            }),
+            "graphValidation": validation.json,
+            "policyBlockers": .array(hardPolicyBlock.map(JSONValue.string)),
+            "serverEnforcementRequired": .bool(true),
+            "clientDirectDispatchEnforced": .bool(true)
+        ])
+
+        let scoped = ExecutionSubmodelScopeV3.enrich(.object([
+            "designBasis": basis.contractJSON,
+            "flowsheet": flowsheet,
+            "executionGovernance": governance
+        ]))
+        return scoped.recursiveFind("executionGovernance") ?? governance
+    }
+
+    /// Canonical Repair Phase-1 acceptance case derived from the reported real-world failure:
+    /// dry glauconite beneficiation / Fe removal must never schedule wet-only unit operations.
+    static func dryGlauconiteAcceptanceReceipt() -> JSONValue {
+        let basis = ScientificProjectBasisV3(
+            objective: ScientificProjectObjective.impurityRemoval.rawValue,
+            processingMode: .dry,
+            valuableComponent: "K2O",
+            targetGrade: 15.0,
+            targetRecovery: nil,
+            maximumImpurityComponent: "Fe2O3",
+            maximumImpurityGrade: 3.0,
+            productSpecification: "K2O 14–16 wt%; Fe2O3 <= 3 wt%; dry beneficiation route",
+            allowedUnitOperations: ["Crushing", "Screening", "Magnetic Separation"],
+            prohibitedUnitOperations: ["Hydrocyclone", "Flotation", "Leaching", "Scrubbing", "Desliming", "Thickening", "Filtration"],
+            authority: "phase1_dry_glauconite_acceptance_basis",
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+        return deterministicReceipt(
+            unitOperations: ["ROM Feed", "Crushing", "Screening", "Magnetic Separation", "Product"],
+            basis: basis
+        )
+    }
+
+    static func dryGlauconiteAcceptanceProof() -> JSONValue {
+        let receipt = dryGlauconiteAcceptanceReceipt()
+        let eligible = Set(arrayStrings(receipt.recursiveFind("eligibleEngines")))
+        let blockedRows = receipt.recursiveFind("blockedEngines")
+        let blocked: Set<String> = {
+            guard let blockedRows, case .array(let rows) = blockedRows else { return [] }
+            return Set(rows.compactMap { row in
+                guard case .object(let item) = row else { return nil }
+                return item["id"]?.stringValue
+            })
+        }()
+
+        let classificationScope = receipt.recursiveFind("engineScopes")?.recursiveFind("classification")
+        let classificationAllowed = Set(arrayStrings(classificationScope?.recursiveFind("allowedUnitOperations")))
+        let classificationBlocked = Set(arrayStrings(classificationScope?.recursiveFind("blockedUnitOperations")))
+
+        let requiredEligible: Set<String> = [
+            "ore_intelligence", "resource_model", "comminution", "classification",
+            "magnetic_gravity", "conservation", "equipment_epc", "economics",
+            "digital_twin", "hybrid_ai", "diagnostics"
+        ]
+        let requiredWetBlocked: Set<String> = [
+            "flotation", "hydrometallurgy", "thermodynamics", "water_circuit"
+        ]
+
+        let checks: [String: Bool] = [
+            "dag_executable": receipt.recursiveFind("dagExecutable") == .bool(true),
+            "dry_mode": receipt.recursiveFind("processingMode")?.stringValue == "dry",
+            "water_not_applicable": receipt.recursiveFind("waterRequirement")?.stringValue == "not_applicable",
+            "required_dry_engines_eligible": requiredEligible.isSubset(of: eligible),
+            "wet_engines_blocked": requiredWetBlocked.isSubset(of: blocked),
+            "flotation_not_eligible": !eligible.contains("flotation"),
+            "water_circuit_not_eligible": !eligible.contains("water_circuit"),
+            "hydrometallurgy_not_eligible": !eligible.contains("hydrometallurgy"),
+            "thermodynamics_not_eligible": !eligible.contains("thermodynamics"),
+            "classification_screening_allowed": classificationAllowed.contains("screening"),
+            "classification_hydrocyclone_blocked": classificationBlocked.contains("hydrocyclone"),
+            "classification_desliming_blocked": classificationBlocked.contains("desliming")
+        ]
+        let failures = checks.filter { !$0.value }.keys.sorted()
+        return .object([
+            "revision": .string("AURORA-PHASE1-DRY-GLAUCONITE-ACCEPTANCE-2026.09.18-1"),
+            "ok": .bool(failures.isEmpty),
+            "ore": .string("glauconite"),
+            "objective": .string(ScientificProjectObjective.impurityRemoval.rawValue),
+            "valuableComponent": .string("K2O"),
+            "targetGrade": .string("14–16 wt%"),
+            "maximumImpurity": .string("Fe2O3 <= 3 wt%"),
+            "processingMode": .string("dry"),
+            "waterRequirement": .string("not_applicable"),
+            "checks": .object(checks.mapValues(JSONValue.bool)),
+            "failures": .array(failures.map(JSONValue.string)),
+            "executionGovernance": receipt
+        ])
+    }
+
     private static func apply(to object: inout [String: JSONValue]) {
         guard let projectValue = object["project"],
               case .object(let projectObject) = projectValue,
