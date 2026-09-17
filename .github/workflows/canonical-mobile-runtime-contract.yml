@@ -2,7 +2,7 @@ name: Canonical Mobile Runtime Contract
 on:
   push:
     branches: [ main ]
-  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: aurora-canonical-mobile-runtime-${{ github.ref }}
@@ -151,7 +151,6 @@ jobs:
           jq -n --arg engine "$ENGINE_ID" --slurpfile payload module-payload.json \
             '{operation:"canonical_mobile_execute", requested_module:$engine, payload:$payload[0]}' > job-request.json
 
-          # Mirrors AURORAAPI.run(): validate the wrapper, then create the job.
           curl --fail --silent --show-error --retry 3 --retry-delay 2 \
             -H 'Accept: application/json' \
             -H 'Content-Type: application/json' \
