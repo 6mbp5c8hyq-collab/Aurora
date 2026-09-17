@@ -24,3 +24,34 @@ targets:
       - sdk: Charts.framework
       - sdk: QuickLook.framework
       - sdk: PDFKit.framework
+
+
+  AURORATests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: AURORATests
+    dependencies:
+      - target: AURORA
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.auroraindustrial.native.tests
+        CODE_SIGN_STYLE: Automatic
+
+schemes:
+  AURORA:
+    build:
+      targets:
+        AURORA: all
+    run:
+      config: Debug
+  AURORA-Phase1-Acceptance:
+    build:
+      targets:
+        AURORA: all
+        AURORATests: [test]
+    test:
+      config: Debug
+      targets:
+        - AURORATests
