@@ -244,3 +244,14 @@ jobs:
           path: artifacts/AURORA-Simulator.app.zip
           if-no-files-found: error
           retention-days: 14
+
+  device-compile:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: brew install xcodegen
+      - run: xcodegen generate
+      - name: Compile native app for physical iOS device architecture
+        run: |
+          set -o pipefail
+          xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build/DeviceDerivedData CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
