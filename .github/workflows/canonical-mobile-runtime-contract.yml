@@ -79,7 +79,7 @@ jobs:
             -H 'Content-Type: application/json' \
             --data-binary @validate-request.json \
             "$AURORA_BACKEND/api/validate" -o validate.json
-          jq -e '.ok == true and .status == "input_valid" and .feed_tph == 80' validate.json
+          jq -e '.ok == true and .status == "input_valid" and .feed_tph == 80 and (.target.value == 35 or .target.value == 35.0) and ((.unit_count | tonumber) >= 1)' validate.json
 
       - name: Submit same payload to canonical DAG
         run: |
