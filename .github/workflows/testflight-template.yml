@@ -28,12 +28,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          missing=0
           for name in APPLE_TEAM_ID IOS_CERTIFICATE_P12_BASE64 IOS_CERTIFICATE_PASSWORD IOS_PROVISIONING_PROFILE_BASE64 ASC_KEY_ID ASC_ISSUER_ID ASC_PRIVATE_KEY_P8_BASE64; do
             if [[ -z "${!name:-}" ]]; then
               echo "::error::Missing required Actions secret: $name"
-              exit 1
+              missing=1
             fi
           done
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
 
       - name: Install Apple distribution certificate
         shell: bash
