@@ -62,6 +62,53 @@ final class Phase1DryGlauconiteAcceptanceTests: XCTestCase {
         XCTAssertEqual(classification.recursiveFind("strictResultScope"), .bool(true))
     }
 
+    func testRawOreDiagnosisIsGraphlessAndTargetless() throws {
+        let basis = ScientificProjectBasisV3(
+            objective: ScientificProjectObjective.rawOreDiagnosis.rawValue,
+            processingMode: .dry,
+            valuableComponent: "K2O",
+            targetGrade: nil,
+            targetRecovery: nil,
+            maximumImpurityComponent: "",
+            maximumImpurityGrade: nil,
+            productSpecification: "Diagnostic-only raw ore characterization",
+            allowedUnitOperations: [],
+            prohibitedUnitOperations: [],
+            authority: "phase1_graphless_raw_diagnosis_acceptance",
+            updatedAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let rawGovernance = ProcessExecutionGovernanceV3.deterministicReceipt(
+            unitOperations: [],
+            basis: basis
+        )
+        XCTAssertEqual(rawGovernance.recursiveFind("dagExecutable"), .bool(false))
+        XCTAssertEqual(rawGovernance.recursiveFind("graphValidation")?.recursiveFind("nodeCount")?.stringValue, "0")
+
+        let payload = JSONValue.object([
+            "designBasis": basis.contractJSON,
+            "executionGovernance": rawGovernance
+        ])
+        let finalized = ExecutionGovernancePolicyV3.finalize(payload)
+
+        XCTAssertEqual(finalized.recursiveFind("dagExecutable"), .bool(true))
+        XCTAssertEqual(finalized.recursiveFind("blockReason")?.stringValue, "")
+        XCTAssertEqual(finalized.recursiveFind("executionClass")?.stringValue, "graphless_raw_ore_diagnosis")
+        XCTAssertEqual(finalized.recursiveFind("diagnosticGraphExemption"), .bool(true))
+        XCTAssertEqual(
+            finalized.recursiveFind("diagnosticGraphExemptionAuthority")?.stringValue,
+            "explicit_raw_ore_diagnosis_objective"
+        )
+        XCTAssertNil(finalized.recursiveFind("targetGrade"))
+
+        let directPayload = JSONValue.object([
+            "requested_module": .string("ore_intelligence"),
+            "designBasis": basis.contractJSON,
+            "executionGovernance": finalized.recursiveFind("executionGovernance") ?? .object([:])
+        ])
+        XCTAssertNil(ExecutionGovernancePolicyV3.directDispatchBlockReason(directPayload))
+    }
+
     func testWetUnitsFailClosedInExplicitDryMode() throws {
         let basis = ScientificProjectBasisV3(
             objective: ScientificProjectObjective.impurityRemoval.rawValue,
