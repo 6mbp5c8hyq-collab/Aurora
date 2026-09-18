@@ -11,6 +11,8 @@ on:
       - 'AURORA/AURORAAPI.swift'
       - 'AURORA/CommandCenterView.swift'
       - 'AURORATests/Phase1DryGlauconiteAcceptanceTests.swift'
+      - 'AURORATests/Phase1OreDocumentAdmissionTests.swift'
+      - 'AURORA/OreDocumentAdmissionV3.swift'
       - 'project.yml'
       - '.github/workflows/process-execution-governance-v3.yml'
   workflow_dispatch:
@@ -30,6 +32,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=AURORA/ProcessExecutionGovernanceV3.swift
+          ADMISSION=AURORA/OreDocumentAdmissionV3.swift
           POLICY=AURORA/ExecutionGovernancePolicyV3.swift
           SCOPE=AURORA/ExecutionSubmodelScopeV3.swift
           API=AURORA/AURORAAPI.swift
@@ -57,6 +60,10 @@ jobs:
           grep -Fq '"water_not_applicable"' "$FILE"
           grep -Fq '"classification_hydrocyclone_blocked"' "$FILE"
           grep -Fq 'Fe2O3 <= 3 wt%' "$FILE"
+          grep -Fq 'client_pdf_text_layer_unverified' "$ADMISSION"
+          grep -Fq 'client_vision_ocr_unverified' "$ADMISSION"
+          grep -Fq 'maximumOCRPages = 24' "$ADMISSION"
+          grep -Fq -- '--- PAGE \\(index + 1) ---' "$ADMISSION"
           grep -Fq 'ExecutionGovernancePolicyV3.finalize' "$API"
           grep -Fq 'ExecutionGovernancePolicyV3.directDispatchBlockReason' "$API"
           grep -Fq 'path == "/api/dag/runs"' "$API"
@@ -100,7 +107,7 @@ jobs:
           echo "DEVICE_ID=$DEVICE_ID" >> "$GITHUB_ENV"
           echo "Selected simulator: $DEVICE_ID"
 
-      - name: Execute dry glauconite Phase 1 XCTest
+      - name: Execute dry glauconite + scanned-PDF Phase 1 XCTest
         shell: bash
         run: |
           set -o pipefail
@@ -111,4 +118,4 @@ jobs:
             -destination "platform=iOS Simulator,id=$DEVICE_ID" \
             CODE_SIGNING_ALLOWED=NO \
             test
-          echo 'AURORA_PHASE1_DRY_GLAUCONITE_ACCEPTANCE_PASS'
+          echo 'AURORA_PHASE1_DRY_GLAUCONITE_AND_OCR_ACCEPTANCE_PASS'
