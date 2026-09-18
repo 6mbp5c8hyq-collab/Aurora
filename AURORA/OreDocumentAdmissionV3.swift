@@ -25,6 +25,40 @@ enum OreDocumentAdmissionV3 {
     static let maximumOCRPages = 24
     private static let minimumUsefulTextCharacters = 80
 
+    /// OCR frequently confuses the letter O with zero inside short oxide formulae.
+    /// Correction is deliberately restricted to the first whitespace-delimited token
+    /// on a line so free prose, values and sample identifiers are never rewritten.
+    static func normalizeRecoveredChemistryText(_ text: String) -> String {
+        let aliases: [String: String] = [
+            "K20": "K2O",
+            "NA20": "Na2O",
+            "FE203": "Fe2O3",
+            "AL203": "Al2O3",
+            "SI02": "SiO2",
+            "TI02": "TiO2",
+            "P205": "P2O5",
+            "CR203": "Cr2O3",
+            "CA0": "CaO",
+            "MG0": "MgO",
+            "MN0": "MnO",
+            "S03": "SO3"
+        ]
+
+        return text.split(separator: "\n", omittingEmptySubsequences: false).map { rawLine in
+            let line = String(rawLine)
+            guard let firstRange = line.range(of: #"^\s*([^\s]+)"#, options: .regularExpression) else {
+                return line
+            }
+            let tokenWithWhitespace = String(line[firstRange])
+            let token = tokenWithWhitespace.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let canonical = aliases[token.uppercased()] else { return line }
+            guard let tokenRange = line.range(of: token, range: firstRange) else { return line }
+            var out = line
+            out.replaceSubrange(tokenRange, with: canonical)
+            return out
+        }.joined(separator: "\n")
+    }
+
     static func extractFallbackText(fromPDF data: Data) async throws -> OreDocumentAdmissionReceiptV3 {
         try await Task.detached(priority: .userInitiated) {
             guard let document = PDFDocument(data: data) else {
@@ -35,7 +69,7 @@ enum OreDocumentAdmissionV3 {
             let nativeText = (document.string ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             if nativeText.count >= minimumUsefulTextCharacters {
                 return OreDocumentAdmissionReceiptV3(
-                    text: nativeText,
+                    text: normalizeRecoveredChemistryText(nativeText),
                     mode: .textLayer,
                     pageCount: pageCount,
                     processedPages: pageCount,
@@ -71,7 +105,7 @@ enum OreDocumentAdmissionV3 {
                             .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                             .joined(separator: "\n")
                         if !text.isEmpty {
-                            pages.append("--- PAGE \(index + 1) ---\n" + text)
+                            pages.append("--- PAGE \(index + 1) ---\n" + normalizeRecoveredChemistryText(text))
                         }
                     } catch {
                         // Page-level OCR failure is non-fatal. The receipt remains review-only.
