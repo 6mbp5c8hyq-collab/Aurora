@@ -133,6 +133,26 @@ actor AURORAAPI {
         try await call("/api/vault/status")
     }
 
+    func chemistryCapabilities() async throws -> JSONValue {
+        try await call("/api/chemistry/capabilities")
+    }
+
+    func chemistrySelftest() async throws -> JSONValue {
+        try await call("/api/chemistry/selftest")
+    }
+
+    func chemistryEquilibrate(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/equilibrate", method: "POST", body: payload)
+    }
+
+    func chemistrySaturationIndices(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/saturation-indices", method: "POST", body: payload)
+    }
+
+    func chemistryKinetics(_ payload: JSONValue) async throws -> JSONValue {
+        try await call("/api/chemistry/kinetics", method: "POST", body: payload)
+    }
+
     func validate(_ payload: JSONValue) async throws -> JSONValue {
         try await call("/api/validate", method: "POST", body: payload)
     }

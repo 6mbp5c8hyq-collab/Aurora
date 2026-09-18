@@ -1,0 +1,48 @@
+name: Chemistry Workbench Contract
+
+on:
+  pull_request:
+    paths:
+      - 'AURORA/AURORAAPI.swift'
+      - 'AURORA/ChemistryWorkbenchView.swift'
+      - 'AURORA/RootView.swift'
+      - '.github/workflows/chemistry-workbench-contract.yml'
+  push:
+    branches:
+      - feature/chemistry-workbench-v1
+    paths:
+      - 'AURORA/AURORAAPI.swift'
+      - 'AURORA/ChemistryWorkbenchView.swift'
+      - 'AURORA/RootView.swift'
+      - '.github/workflows/chemistry-workbench-contract.yml'
+
+jobs:
+  source-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify chemistry routes are wired into the mobile API
+        run: |
+          set -euo pipefail
+          grep -q 'func chemistryCapabilities' AURORA/AURORAAPI.swift
+          grep -q '/api/chemistry/capabilities' AURORA/AURORAAPI.swift
+          grep -q '/api/chemistry/equilibrate' AURORA/AURORAAPI.swift
+          grep -q '/api/chemistry/saturation-indices' AURORA/AURORAAPI.swift
+          grep -q '/api/chemistry/kinetics' AURORA/AURORAAPI.swift
+          grep -q '/api/chemistry/selftest' AURORA/AURORAAPI.swift
+      - name: Verify workbench authority surfaces
+        run: |
+          set -euo pipefail
+          grep -q 'Chemistry Authority Workbench' AURORA/ChemistryWorkbenchView.swift
+          grep -q 'Scientific Authority Boundary' AURORA/ChemistryWorkbenchView.swift
+          grep -q 'Authority & Provenance' AURORA/ChemistryWorkbenchView.swift
+          grep -q 'Solver & Diagnostics' AURORA/ChemistryWorkbenchView.swift
+          grep -q 'case chemistry = "Chemistry Workbench"' AURORA/RootView.swift
+          grep -q 'case .chemistry: ChemistryWorkbenchView()' AURORA/RootView.swift
+      - name: Reject silent Pitzer/SIT claims in client templates
+        run: |
+          set -euo pipefail
+          if grep -Eiq '"activity_model"[[:space:]]*:[[:space:]]*"(pitzer|sit)"' AURORA/ChemistryWorkbenchView.swift; then
+            echo 'Client template must not claim Pitzer/SIT without a validated backend delegate.' >&2
+            exit 1
+          fi
