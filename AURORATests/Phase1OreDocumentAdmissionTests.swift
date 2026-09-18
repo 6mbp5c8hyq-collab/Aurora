@@ -88,6 +88,20 @@ final class Phase1OreDocumentAdmissionTests: XCTestCase {
         XCTAssertTrue(receipt.text.localizedCaseInsensitiveContains("Fe2O3"))
     }
 
+    func testConservativeOxideOCRNormalization() {
+        let raw = """
+        K20 10.5 %
+        Fe203 8.0 %
+        Si02 55.0 %
+        Sample K20-BATCH
+        """
+        let normalized = OreDocumentAdmissionV3.normalizeRecoveredChemistryText(raw)
+        XCTAssertTrue(normalized.contains("K2O 10.5 %"))
+        XCTAssertTrue(normalized.contains("Fe2O3 8.0 %"))
+        XCTAssertTrue(normalized.contains("SiO2 55.0 %"))
+        XCTAssertTrue(normalized.contains("Sample K20-BATCH"))
+    }
+
     func testReceiptAuthorityIsExtractionOnly() {
         XCTAssertEqual(OreDocumentAdmissionReceiptV3.ExtractionMode.textLayer.rawValue, "client_pdf_text_layer_unverified")
         XCTAssertEqual(OreDocumentAdmissionReceiptV3.ExtractionMode.visionOCR.rawValue, "client_vision_ocr_unverified")
