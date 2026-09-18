@@ -42,7 +42,7 @@ jobs:
           test "$status" = "200"
           jq -e '
             .ok == true and
-            .revision == "AURORA-RUNTIME-USE-LEDGER-2026.09.13-1" and
+            .revision == "AURORA-RUNTIME-USE-LEDGER-2026.09.14-3" and
             (.events | type == "array") and
             (.summary | type == "object") and
             .summary.component_use_count == 0 and
