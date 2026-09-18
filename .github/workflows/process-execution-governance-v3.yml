@@ -63,7 +63,7 @@ jobs:
           grep -Fq 'client_pdf_text_layer_unverified' "$ADMISSION"
           grep -Fq 'client_vision_ocr_unverified' "$ADMISSION"
           grep -Fq 'maximumOCRPages = 24' "$ADMISSION"
-          grep -Fq -- '--- PAGE \\(index + 1) ---' "$ADMISSION"
+          grep -Fq -- '--- PAGE \(index + 1) ---' "$ADMISSION"
           grep -Fq 'ExecutionGovernancePolicyV3.finalize' "$API"
           grep -Fq 'ExecutionGovernancePolicyV3.directDispatchBlockReason' "$API"
           grep -Fq 'path == "/api/dag/runs"' "$API"
