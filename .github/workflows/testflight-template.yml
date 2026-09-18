@@ -2,6 +2,9 @@ name: AURORA TestFlight
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - release/testflight-2026-09-18
 
 permissions:
   contents: read
