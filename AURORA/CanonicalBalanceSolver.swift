@@ -82,8 +82,8 @@ enum CanonicalBalanceSolver {
         tolerancePercent: Double = defaultTolerancePercent
     ) -> CanonicalClosureResult {
         let mode = CanonicalEngineRegistry.normalize(processingMode)
-        let anyLiquidEvidence = streams.contains { $0.resolvedLiquidMassTPH != nil }
-        if mode == "dry" && !anyLiquidEvidence {
+        let hasPositiveLiquid = streams.contains { ($0.resolvedLiquidMassTPH ?? 0) > 1e-12 }
+        if mode == "dry" && !hasPositiveLiquid {
             return .init(
                 status: .notApplicable,
                 basis: "liquid_mass",
