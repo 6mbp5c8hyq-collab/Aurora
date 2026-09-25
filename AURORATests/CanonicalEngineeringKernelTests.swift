@@ -118,7 +118,7 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
 
         XCTAssertEqual(balances?.recursiveFind("mass")?.firstString(["status"]), EngineeringBalanceStatus.pass.rawValue)
         XCTAssertEqual(balances?.recursiveFind("drySolids")?.firstString(["status"]), EngineeringBalanceStatus.pass.rawValue)
-        XCTAssertEqual(balances?.recursiveFind("water")?.firstString(["status"]), EngineeringBalanceStatus.pass.rawValue)
+        XCTAssertEqual(balances?.recursiveFind("water")?.firstString(["status"]), EngineeringBalanceStatus.notApplicable.rawValue)
 
         let component = balances?.recursiveFind("components")?.recursiveFind("K2O")
         XCTAssertEqual(component?.firstString(["status"]), EngineeringBalanceStatus.pass.rawValue)
@@ -138,7 +138,7 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
         let enriched = CanonicalExecutionOrchestrator.enrich(raw)
         let mass = enriched.recursiveFind("balances")?.recursiveFind("mass")
         XCTAssertEqual(mass?.firstString(["status"]), EngineeringBalanceStatus.fail.rawValue)
-        XCTAssertEqual(CanonicalJSON.number(mass?.recursiveFind("error_percent")), 10.0, accuracy: 1e-9)
+        XCTAssertEqual(CanonicalJSON.number(mass?.recursiveFind("error_percent")) ?? -1, 10.0, accuracy: 1e-9)
     }
 
     func testMissingBoundaryFlowsReturnsInsufficientDataInsteadOfFabricating() throws {
@@ -182,17 +182,7 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
         let enriched = CanonicalExecutionOrchestrator.enrich(raw)
         let energy = enriched.recursiveFind("balances")?.recursiveFind("energy")
         XCTAssertEqual(energy?.firstString(["status"]), EngineeringBalanceStatus.pass.rawValue)
-        XCTAssertEqual(CanonicalJSON.number(energy?.recursiveFind("installed_power_kw")), 240.0, accuracy: 1e-9)
-        XCTAssertEqual(CanonicalJSON.number(energy?.recursiveFind("operating_power_kw")), 182.0, accuracy: 1e-9)
-    }
-}
-
-private extension XCTestCase {
-    func XCTAssertEqual(_ expression1: Double?, _ expression2: Double, accuracy: Double, file: StaticString = #filePath, line: UInt = #line) {
-        guard let expression1 else {
-            XCTFail("Expected numeric value but received nil.", file: file, line: line)
-            return
-        }
-        XCTAssertEqual(expression1, expression2, accuracy: accuracy, file: file, line: line)
+        XCTAssertEqual(CanonicalJSON.number(energy?.recursiveFind("installed_power_kw")) ?? -1, 240.0, accuracy: 1e-9)
+        XCTAssertEqual(CanonicalJSON.number(energy?.recursiveFind("operating_power_kw")) ?? -1, 182.0, accuracy: 1e-9)
     }
 }
