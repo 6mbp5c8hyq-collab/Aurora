@@ -46,10 +46,14 @@ actor AURORAAPI {
         if let body {
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             let scientificBody = SafeScientificProjectContractV3.enrich(body)
-            let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+            let canonicalBody = CanonicalExecutionOrchestrator.enrich(scientificBody)
+            let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(canonicalBody)
             let governedBody = ExecutionGovernancePolicyV3.finalize(graphGovernedBody)
 
             if path == "/api/jobs" {
+                if let reason = CanonicalExecutionOrchestrator.dispatchBlockReason(governedBody) {
+                    throw APIError.executionGovernanceBlocked(reason)
+                }
                 if let reason = ExecutionGovernancePolicyV3.directDispatchBlockReason(governedBody) {
                     throw APIError.executionGovernanceBlocked(reason)
                 }
@@ -266,7 +270,8 @@ actor AURORAAPI {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
         let scientificBody = SafeScientificProjectContractV3.enrich(body)
-        let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(scientificBody)
+        let canonicalBody = CanonicalExecutionOrchestrator.enrich(scientificBody)
+        let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(canonicalBody)
         let governedBody = ExecutionGovernancePolicyV3.finalize(graphGovernedBody)
         guard let encoded = governedBody.data() else { throw APIError.invalidResponse }
         request.httpBody = encoded
