@@ -16,6 +16,7 @@ struct RootView: View {
         case operations = "Operations & Digital Twin"
         case vault = "Result Vault"
         case engines = "Engine Observatory"
+        case chemistry = "Chemistry Workbench"
         case catalog = "Data & Model Catalog"
         case components = "Component Registry"
         case authority = "Authority Graph"
@@ -40,6 +41,7 @@ struct RootView: View {
             case .operations: return "dot.radiowaves.left.and.right"
             case .vault: return "externaldrive.fill.badge.checkmark"
             case .engines: return "square.stack.3d.up.fill"
+            case .chemistry: return "atom"
             case .catalog: return "server.rack"
             case .components: return "shippingbox.and.arrow.backward.fill"
             case .authority: return "point.3.filled.connected.trianglepath.dotted"
@@ -64,6 +66,7 @@ struct RootView: View {
             case .operations: return "Envelope, controls and twin state"
             case .vault: return "Recover persisted DAG and engine runs"
             case .engines: return "Live matrix and per-engine workspaces"
+            case .chemistry: return "Speciation, activities, saturation and kinetics"
             case .catalog: return "Runtime databases, models and references"
             case .components: return "Python runtime census and authority boundary"
             case .authority: return "DAG, engine, component and asset evidence map"
@@ -151,6 +154,7 @@ struct RootView: View {
                 case .operations: OperationsTwinView()
                 case .vault: ResultVaultBrowserView()
                 case .engines: EngineWorkspaceNavigatorView(selectedEngineID: $selectedEngineID)
+                case .chemistry: ChemistryWorkbenchView()
                 case .catalog: PlatformCatalogView()
                 case .components: RuntimeComponentRegistryView()
                 case .authority: RuntimeAuthorityGraphView()
@@ -212,6 +216,7 @@ struct RootView: View {
                         Section.operations,
                         Section.vault,
                         Section.engines,
+                        Section.chemistry,
                         Section.catalog,
                         Section.components,
                         Section.authority,
