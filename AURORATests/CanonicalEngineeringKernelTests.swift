@@ -185,4 +185,54 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
         XCTAssertEqual(CanonicalJSON.number(energy?.recursiveFind("installed_power_kw")) ?? -1, 240.0, accuracy: 1e-9)
         XCTAssertEqual(CanonicalJSON.number(energy?.recursiveFind("operating_power_kw")) ?? -1, 182.0, accuracy: 1e-9)
     }
+
+    func testNegativeBoundaryFlowCannotCancelPositiveProductToPassClosure() throws {
+        let raw = payload(
+            mode: "dry",
+            units: ["ROM Feed", "Screening", "Product", "Tailings"],
+            streams: [
+                stream(id: "F001", role: "external_feed", total: 100, dry: 100, liquid: 0),
+                stream(id: "P001", role: "product", total: 110, dry: 110, liquid: 0),
+                stream(id: "T001", role: "tailings", total: -10, dry: -10, liquid: 0)
+            ]
+        )
+
+        let enriched = CanonicalExecutionOrchestrator.enrich(raw)
+        let balances = enriched.recursiveFind("balances")
+        XCTAssertEqual(balances?.recursiveFind("mass")?.firstString(["status"]), EngineeringBalanceStatus.fail.rawValue)
+        XCTAssertEqual(balances?.recursiveFind("drySolids")?.firstString(["status"]), EngineeringBalanceStatus.fail.rawValue)
+        XCTAssertEqual(enriched.recursiveFind("canonicalEngineering")?.firstString(["state"]), "BLOCKED")
+        XCTAssertEqual(CanonicalJSON.number(enriched.recursiveFind("balanceFailures")), 2)
+    }
+
+    func testDryWaterBalanceWithUnknownLiquidDataIsNotAutomaticallyNotApplicable() throws {
+        let raw = payload(
+            mode: "dry",
+            units: ["ROM Feed", "Screening", "Product"],
+            streams: [
+                stream(id: "F001", role: "external_feed", total: 100),
+                stream(id: "P001", role: "product", total: 100)
+            ]
+        )
+
+        let enriched = CanonicalExecutionOrchestrator.enrich(raw)
+        XCTAssertEqual(
+            enriched.recursiveFind("balances")?.recursiveFind("water")?.firstString(["status"]),
+            EngineeringBalanceStatus.insufficientData.rawValue
+        )
+    }
+
+    func testUnbalancedMassCannotProduceReadyReceipt() throws {
+        let raw = payload(
+            mode: "dry",
+            units: ["ROM Feed", "Screening", "Product"],
+            streams: [
+                stream(id: "F001", role: "external_feed", total: 100, dry: 100, liquid: 0),
+                stream(id: "P001", role: "product", total: 90, dry: 90, liquid: 0)
+            ]
+        )
+        let enriched = CanonicalExecutionOrchestrator.enrich(raw)
+        XCTAssertEqual(enriched.recursiveFind("canonicalEngineering")?.firstString(["state"]), "BLOCKED")
+        XCTAssertEqual(CanonicalJSON.number(enriched.recursiveFind("balanceFailures")), 2)
+    }
 }
