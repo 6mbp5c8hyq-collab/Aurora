@@ -34,15 +34,18 @@ final class AppModel: ObservableObject {
     private let api = AURORAAPI()
 
     func checkHealth() {
+        Task { await refreshConnection() }
+    }
+
+    // A single sequential refresh avoids racing fast and deep audit results.
+    func refreshConnection(includeDeepDiagnostics: Bool = false) async {
         connection = .checking
-        Task {
-            do {
-                let result = try await api.health()
-                connection = .online(result.firstString(["status", "platform_status", "state", "ok"]) ?? "online")
-                await refreshServerState(recoverLatest: true)
-            } catch {
-                connection = .offline(error.localizedDescription)
-            }
+        do {
+            let result = try await api.health()
+            connection = .online(result.firstString(["status", "platform_status", "state", "ok"]) ?? "online")
+            await refreshServerState(recoverLatest: true, includeDeepDiagnostics: includeDeepDiagnostics)
+        } catch {
+            connection = .offline(error.localizedDescription)
         }
     }
 
