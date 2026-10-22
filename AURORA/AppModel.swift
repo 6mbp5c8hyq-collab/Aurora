@@ -46,9 +46,10 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func refreshServerState(recoverLatest: Bool = false) async {
+    func refreshServerState(recoverLatest: Bool = false, includeDeepDiagnostics: Bool = false) async {
         async let vaultTask = try? api.vaultStatus()
-        async let auditTask = try? api.audit()
+        // Startup uses the fast audit. The deep dependency census is on-demand in Diagnostics.
+        async let auditTask = try? (includeDeepDiagnostics ? api.audit() : api.auditSummary())
         async let telemetryTask = try? api.telemetryRecent()
         async let performanceTask = try? api.performanceProbe()
         async let dagTask = try? api.recentDagRuns()
