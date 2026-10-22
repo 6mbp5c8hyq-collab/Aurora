@@ -1,5 +1,22 @@
 import Foundation
 
+// Shared bounded polling schedule: fewer read-only status requests while keeping
+// short jobs responsive. Timeout only stops client polling, never a server job.
+enum AURORAPollingPolicy {
+    static let executionTimeout: TimeInterval = 900
+    static let exportTimeout: TimeInterval = 600
+
+    static func delaySeconds(forAttempt attempt: Int) -> TimeInterval {
+        if attempt < 5 { return 2 }
+        if attempt < 15 { return 5 }
+        return 10
+    }
+
+    static func boundedDelay(forAttempt attempt: Int, remaining: TimeInterval) -> TimeInterval {
+        max(0, min(delaySeconds(forAttempt: attempt), remaining))
+    }
+}
+
 actor AURORAAPI {
     enum APIError: LocalizedError {
         case invalidResponse
@@ -9,6 +26,7 @@ actor AURORAAPI {
         case missingExportJobID
         case exportFailed(String)
         case exportTimedOut
+        case executionTimedOut(String)
 
         var errorDescription: String? {
             switch self {
@@ -18,7 +36,8 @@ actor AURORAAPI {
             case .missingRunID: return "AURORA did not return a DAG run identifier"
             case .missingExportJobID: return "AURORA did not return an export job identifier"
             case .exportFailed(let message): return "AURORA export failed: \(message)"
-            case .exportTimedOut: return "AURORA export worker did not finish before the client timeout"
+            case .exportTimedOut: return "AURORA export worker did not finish before the client timeout; the server job may still be running."
+            case .executionTimedOut(let id): return "AURORA stopped polling run \(id) after 15 minutes. Server execution may continue; retrieve the result from Result Vault."
             }
         }
     }
@@ -190,13 +209,21 @@ actor AURORAAPI {
         await onUpdate(created)
         var latest = created
 
-        for _ in 0..<900 {
+        let deadline = Date().addingTimeInterval(AURORAPollingPolicy.executionTimeout)
+        var attempts = 0
+        while Date() < deadline {
+            try Task.checkCancellation()
             latest = try await dagRun(id)
             await onUpdate(latest)
             if terminalStatus(latest) { return latest }
-            try await Task.sleep(nanoseconds: 1_000_000_000)
+            let delay = AURORAPollingPolicy.boundedDelay(
+                forAttempt: attempts, remaining: deadline.timeIntervalSinceNow
+            )
+            if delay <= 0 { break }
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            attempts += 1
         }
-        return latest
+        throw APIError.executionTimedOut(id)
     }
 
     func run(_ payload: JSONValue, onUpdate: @Sendable (JSONValue) async -> Void) async throws -> JSONValue {
@@ -205,15 +232,23 @@ actor AURORAAPI {
         await onUpdate(created)
         var latest = created
 
-        for _ in 0..<900 {
+        let deadline = Date().addingTimeInterval(AURORAPollingPolicy.executionTimeout)
+        var attempts = 0
+        while Date() < deadline {
+            try Task.checkCancellation()
             latest = try await job(id, preview: true)
             await onUpdate(latest)
             if terminalStatus(latest) {
                 return try await job(id)
             }
-            try await Task.sleep(nanoseconds: 1_000_000_000)
+            let delay = AURORAPollingPolicy.boundedDelay(
+                forAttempt: attempts, remaining: deadline.timeIntervalSinceNow
+            )
+            if delay <= 0 { break }
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            attempts += 1
         }
-        return latest
+        throw APIError.executionTimedOut(id)
     }
 
     func importOre(data: Data, filename: String) async throws -> JSONValue {
@@ -253,7 +288,10 @@ actor AURORAAPI {
             throw APIError.missingExportJobID
         }
 
-        for _ in 0..<600 {
+        let deadline = Date().addingTimeInterval(AURORAPollingPolicy.exportTimeout)
+        var attempts = 0
+        while Date() < deadline {
+            try Task.checkCancellation()
             let status = try await call("/api/exports/jobs/\(id)")
             let state = (status.firstString(["status", "state"]) ?? "").lowercased()
             if state == "ready" {
@@ -263,7 +301,12 @@ actor AURORAAPI {
             if state == "failed" || state == "error" {
                 throw APIError.exportFailed(status.firstString(["error", "message"]) ?? state)
             }
-            try await Task.sleep(nanoseconds: 1_000_000_000)
+            let delay = AURORAPollingPolicy.boundedDelay(
+                forAttempt: attempts, remaining: deadline.timeIntervalSinceNow
+            )
+            if delay <= 0 { break }
+            try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            attempts += 1
         }
         throw APIError.exportTimedOut
     }
