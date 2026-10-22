@@ -82,8 +82,13 @@ enum CanonicalBalanceSolver {
         tolerancePercent: Double = defaultTolerancePercent
     ) -> CanonicalClosureResult {
         let mode = CanonicalEngineRegistry.normalize(processingMode)
-        let hasPositiveLiquid = streams.contains { ($0.resolvedLiquidMassTPH ?? 0) > 1e-12 }
-        if mode == "dry" && !hasPositiveLiquid {
+        // "Not applicable" is justified only when liquid absence is actually evidenced.
+        // Unknown phase content must remain INSUFFICIENT_DATA, even for a dry route.
+        let explicitlyZeroLiquid = !streams.isEmpty && streams.allSatisfy { stream in
+            guard let liquid = stream.resolvedLiquidMassTPH else { return false }
+            return liquid.isFinite && abs(liquid) <= 1e-12
+        }
+        if mode == "dry" && explicitlyZeroLiquid {
             return .init(
                 status: .notApplicable,
                 basis: "liquid_mass",
@@ -199,6 +204,26 @@ enum CanonicalBalanceSolver {
                 tolerancePercent: tolerancePercent,
                 missingInputs: missing,
                 note: insufficientNote
+            )
+        }
+
+        // Validate each boundary stream before aggregation. A negative tailing value
+        // can otherwise cancel a positive output and falsely satisfy mass closure.
+        let invalidBoundaryStreams = (inputs + outputs).filter { stream in
+            guard let flow = value(stream) else { return false }
+            return !flow.isFinite || flow < 0
+        }.map(\.id).sorted()
+        if !invalidBoundaryStreams.isEmpty {
+            return .init(
+                status: .fail,
+                basis: basis,
+                inputTPH: nil,
+                outputTPH: nil,
+                residualTPH: nil,
+                errorPercent: nil,
+                tolerancePercent: tolerancePercent,
+                missingInputs: invalidBoundaryStreams,
+                note: "Invalid negative or non-finite boundary stream flow; closure cannot be accepted."
             )
         }
 
