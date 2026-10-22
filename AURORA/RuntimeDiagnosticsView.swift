@@ -21,8 +21,7 @@ struct RuntimeDiagnosticsView: View {
         }
         .background(AuroraTheme.background)
         .refreshable {
-            app.checkHealth()
-            await app.refreshServerState(includeDeepDiagnostics: true)
+            await app.refreshConnection(includeDeepDiagnostics: true)
         }
     }
 
