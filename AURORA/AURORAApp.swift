@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Foundation
 
 @main
 struct AURORAApp: App {
@@ -13,7 +14,7 @@ struct AURORAApp: App {
             // Never crash the application at launch because a device-local SwiftData
             // store is stale or incompatible. Keep AURORA operable and allow the
             // runtime/backend diagnostics to load; persistence can be repaired later.
-            assertionFailure("AURORA persistent store unavailable: \(error)")
+            NSLog("AURORA persistent store unavailable; using in-memory recovery: %@", String(describing: error))
             let recovery = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
             do {
                 return try ModelContainer(for: schema, configurations: [recovery])
