@@ -203,6 +203,7 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
         XCTAssertEqual(balances?.recursiveFind("drySolids")?.firstString(["status"]), EngineeringBalanceStatus.fail.rawValue)
         XCTAssertEqual(enriched.recursiveFind("canonicalEngineering")?.firstString(["state"]), "BLOCKED")
         XCTAssertEqual(CanonicalJSON.number(enriched.recursiveFind("balanceFailures")), 2)
+        XCTAssertNotNil(CanonicalExecutionOrchestrator.balanceDispatchBlockReason(enriched))
     }
 
     func testDryWaterBalanceWithUnknownLiquidDataIsNotAutomaticallyNotApplicable() throws {
@@ -234,5 +235,6 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
         let enriched = CanonicalExecutionOrchestrator.enrich(raw)
         XCTAssertEqual(enriched.recursiveFind("canonicalEngineering")?.firstString(["state"]), "BLOCKED")
         XCTAssertEqual(CanonicalJSON.number(enriched.recursiveFind("balanceFailures")), 2)
+        XCTAssertNotNil(CanonicalExecutionOrchestrator.balanceDispatchBlockReason(enriched))
     }
 }
