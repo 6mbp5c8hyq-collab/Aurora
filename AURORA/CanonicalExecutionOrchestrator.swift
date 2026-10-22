@@ -41,6 +41,15 @@ enum CanonicalExecutionOrchestrator {
         return nil
     }
 
+    // A failed conservation balance is a hard stop, not merely a red UI badge.
+    // Unknown/incomplete balances remain visible but do not imply a measured failure.
+    static func balanceDispatchBlockReason(_ value: JSONValue) -> String? {
+        guard let receipt = value.recursiveFind("canonicalEngineering"),
+              let failures = CanonicalJSON.number(receipt.recursiveFind("balanceFailures")),
+              failures > 0 else { return nil }
+        return "Canonical preflight detected \(Int(failures)) failed conservation balance(s). Correct the boundary streams before dispatch."
+    }
+
     static func preflightReceipt(_ value: JSONValue) -> JSONValue? {
         enrich(value).recursiveFind("canonicalEngineering")
     }
