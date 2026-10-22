@@ -43,6 +43,7 @@ actor AURORAAPI {
     }
 
     private let session: URLSession
+    private let fastSession: URLSession
 
     init() {
         let config = URLSessionConfiguration.default
@@ -51,6 +52,15 @@ actor AURORAAPI {
         config.waitsForConnectivity = true
         config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         self.session = URLSession(configuration: config)
+
+        // Diagnostics must fail quickly when offline, rather than inheriting
+        // the long timeout reserved for engineering jobs and exports.
+        let fastConfig = URLSessionConfiguration.ephemeral
+        fastConfig.timeoutIntervalForRequest = 20
+        fastConfig.timeoutIntervalForResource = 30
+        fastConfig.waitsForConnectivity = false
+        fastConfig.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        self.fastSession = URLSession(configuration: fastConfig)
     }
 
     private func endpoint(_ path: String) -> URL {
@@ -94,7 +104,9 @@ actor AURORAAPI {
             request.httpBody = governedBody.data()
         }
 
-        let (data, response) = try await session.data(for: request)
+        let fastRoutes: Set<String> = ["/api/health", "/api/audit", "/api/vault/status", "/api/telemetry/recent"]
+        let transport = fastRoutes.contains(path) ? fastSession : session
+        let (data, response) = try await transport.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
