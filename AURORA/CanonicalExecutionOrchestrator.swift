@@ -41,6 +41,15 @@ enum CanonicalExecutionOrchestrator {
         return nil
     }
 
+    // A failed conservation balance is a hard stop, not merely a red UI badge.
+    // Unknown/incomplete balances remain visible but do not imply a measured failure.
+    static func balanceDispatchBlockReason(_ value: JSONValue) -> String? {
+        guard let receipt = value.recursiveFind("canonicalEngineering"),
+              let failures = CanonicalJSON.number(receipt.recursiveFind("balanceFailures")),
+              failures > 0 else { return nil }
+        return "Canonical preflight detected \(Int(failures)) failed conservation balance(s). Correct the boundary streams before dispatch."
+    }
+
     static func preflightReceipt(_ value: JSONValue) -> JSONValue? {
         enrich(value).recursiveFind("canonicalEngineering")
     }
@@ -75,8 +84,10 @@ enum CanonicalExecutionOrchestrator {
             return status.hasPrefix("BLOCKED")
         }
 
-        let resultState = blockedOperations.isEmpty ? "READY" : "BLOCKED"
-        let insufficientBalances = [mass.status, dry.status, water.status, energy.status].filter { $0 == .insufficientData }.count
+        let balanceStatuses = [mass.status, dry.status, water.status, energy.status] + components.values.map(\.status)
+        let failedBalances = balanceStatuses.filter { $0 == .fail }.count
+        let resultState = blockedOperations.isEmpty && failedBalances == 0 ? "READY" : "BLOCKED"
+        let insufficientBalances = balanceStatuses.filter { $0 == .insufficientData }.count
 
         object["canonicalEngineering"] = .object([
             "schemaVersion": .string(CanonicalEngineeringRevision.schema),
@@ -99,6 +110,7 @@ enum CanonicalExecutionOrchestrator {
                 "energy": energy.json
             ]),
             "balanceDataGaps": .number(Double(insufficientBalances)),
+            "balanceFailures": .number(Double(failedBalances)),
             "dispatchRule": .string("Only READY or WARNING_EXTRAPOLATION engines may be directly dispatched."),
             "calculationAuthority": .string("No engineering value is synthesized when required evidence is absent.")
         ])

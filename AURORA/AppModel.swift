@@ -34,21 +34,25 @@ final class AppModel: ObservableObject {
     private let api = AURORAAPI()
 
     func checkHealth() {
+        Task { await refreshConnection() }
+    }
+
+    // A single sequential refresh avoids racing fast and deep audit results.
+    func refreshConnection(includeDeepDiagnostics: Bool = false) async {
         connection = .checking
-        Task {
-            do {
-                let result = try await api.health()
-                connection = .online(result.firstString(["status", "platform_status", "state", "ok"]) ?? "online")
-                await refreshServerState(recoverLatest: true)
-            } catch {
-                connection = .offline(error.localizedDescription)
-            }
+        do {
+            let result = try await api.health()
+            connection = .online(result.firstString(["status", "platform_status", "state", "ok"]) ?? "online")
+            await refreshServerState(recoverLatest: true, includeDeepDiagnostics: includeDeepDiagnostics)
+        } catch {
+            connection = .offline(error.localizedDescription)
         }
     }
 
-    func refreshServerState(recoverLatest: Bool = false) async {
+    func refreshServerState(recoverLatest: Bool = false, includeDeepDiagnostics: Bool = false) async {
         async let vaultTask = try? api.vaultStatus()
-        async let auditTask = try? api.audit()
+        // Startup uses the fast audit. The deep dependency census is on-demand in Diagnostics.
+        async let auditTask = try? (includeDeepDiagnostics ? api.audit() : api.auditSummary())
         async let telemetryTask = try? api.telemetryRecent()
         async let performanceTask = try? api.performanceProbe()
         async let dagTask = try? api.recentDagRuns()
