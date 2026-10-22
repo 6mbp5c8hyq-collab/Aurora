@@ -50,6 +50,11 @@ actor AURORAAPI {
             let graphGovernedBody = ProcessExecutionGovernanceV3.enrich(canonicalBody)
             let governedBody = ExecutionGovernancePolicyV3.finalize(graphGovernedBody)
 
+            if path == "/api/jobs" || path == "/api/dag/runs" {
+                if let reason = CanonicalExecutionOrchestrator.balanceDispatchBlockReason(governedBody) {
+                    throw APIError.executionGovernanceBlocked(reason)
+                }
+            }
             if path == "/api/jobs" {
                 if let reason = CanonicalExecutionOrchestrator.dispatchBlockReason(governedBody) {
                     throw APIError.executionGovernanceBlocked(reason)
