@@ -22,7 +22,7 @@ struct RuntimeDiagnosticsView: View {
         .background(AuroraTheme.background)
         .refreshable {
             app.checkHealth()
-            await app.refreshServerState()
+            await app.refreshServerState(includeDeepDiagnostics: true)
         }
     }
 
@@ -102,11 +102,15 @@ struct RuntimeDiagnosticsView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Canonical Runtime Readiness").font(.headline)
-                        Text("Scientific authority and dependency gates from the deep runtime audit")
+                        Text("Fast audit at startup; load the full dependency census on demand")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
                     Spacer()
+                    Button("Load deep audit") {
+                        Task { await app.refreshServerState(includeDeepDiagnostics: true) }
+                    }
+                    .buttonStyle(.bordered)
                     StatusBadge(text: readinessLabel)
                 }
 
