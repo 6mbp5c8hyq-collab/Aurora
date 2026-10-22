@@ -237,4 +237,16 @@ final class CanonicalEngineeringKernelTests: XCTestCase {
         XCTAssertEqual(CanonicalJSON.number(enriched.recursiveFind("balanceFailures")), 2)
         XCTAssertNotNil(CanonicalExecutionOrchestrator.balanceDispatchBlockReason(enriched))
     }
+
+    func testAdaptivePollingUsesBoundedIntervals() {
+        XCTAssertEqual(AURORAPollingPolicy.delaySeconds(forAttempt: 0), 2)
+        XCTAssertEqual(AURORAPollingPolicy.delaySeconds(forAttempt: 4), 2)
+        XCTAssertEqual(AURORAPollingPolicy.delaySeconds(forAttempt: 5), 5)
+        XCTAssertEqual(AURORAPollingPolicy.delaySeconds(forAttempt: 14), 5)
+        XCTAssertEqual(AURORAPollingPolicy.delaySeconds(forAttempt: 15), 10)
+        XCTAssertEqual(AURORAPollingPolicy.boundedDelay(forAttempt: 40, remaining: 1.5), 1.5)
+        XCTAssertEqual(AURORAPollingPolicy.boundedDelay(forAttempt: 40, remaining: -3), 0)
+        XCTAssertEqual(AURORAPollingPolicy.executionTimeout, 900)
+        XCTAssertEqual(AURORAPollingPolicy.exportTimeout, 600)
+    }
 }
