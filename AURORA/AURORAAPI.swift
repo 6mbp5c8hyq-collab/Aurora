@@ -103,10 +103,19 @@ actor AURORAAPI {
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
 
+    // Compare complete states, not substrings: "not_completed" and
+    // "unblocked" are never proof of completed scientific execution.
+    static func isTerminalState(_ raw: String) -> Bool {
+        let state = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return Set([
+            "completed", "completed_with_warnings", "complete",
+            "success", "succeeded", "failed", "failure", "error",
+            "blocked", "cancelled", "canceled", "finished"
+        ]).contains(state)
+    }
+
     private func terminalStatus(_ value: JSONValue) -> Bool {
-        let status = (value.firstString(["status", "platform_status", "state"]) ?? "").lowercased()
-        let terminal = ["completed", "success", "succeeded", "failed", "error", "blocked", "cancelled"]
-        return terminal.contains(where: { status.contains($0) })
+        Self.isTerminalState(value.firstString(["status", "platform_status", "state"]) ?? "")
     }
 
     private func download(path: String, fallbackName: String) async throws -> (url: URL, name: String) {
