@@ -115,10 +115,13 @@ actor AURORAAPI {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
-        let (data, response) = try await session.data(for: request)
+        // Disk-backed URLSession download prevents large EPC ZIP bundles from
+        // consuming a proportional amount of iPhone RAM.
+        request.timeoutInterval = 180
+        let (temporary, response) = try await session.download(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+            throw APIError.http(http.statusCode, "AURORA download returned an HTTP error")
         }
 
         let disposition = http.value(forHTTPHeaderField: "Content-Disposition") ?? ""
@@ -131,10 +134,24 @@ actor AURORAAPI {
             .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: " \"")) }
             ?? fallbackName
 
-        let target = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(name)
-        try data.write(to: target, options: .atomic)
-        return (target, name)
+        // Sanitize the suggested filename and never overwrite an earlier export.
+        let basename = name.replacingOccurrences(of: "\\", with: "/")
+            .components(separatedBy: "/").last ?? fallbackName
+        let cleanName = basename.components(separatedBy: .controlCharacters)
+            .joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        let filename = cleanName.isEmpty || cleanName == "." || cleanName == ".."
+            ? fallbackName : String(cleanName.prefix(140))
+        let manager = FileManager.default
+        let documents = manager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var target = documents.appendingPathComponent(filename, isDirectory: false)
+        if manager.fileExists(atPath: target.path) {
+            let stem = target.deletingPathExtension().lastPathComponent
+            let ext = target.pathExtension
+            let unique = stem + "-" + String(UUID().uuidString.prefix(8)) + (ext.isEmpty ? "" : "." + ext)
+            target = documents.appendingPathComponent(unique, isDirectory: false)
+        }
+        try manager.moveItem(at: temporary, to: target)
+        return (target, target.lastPathComponent)
     }
 
     func health() async throws -> JSONValue {
