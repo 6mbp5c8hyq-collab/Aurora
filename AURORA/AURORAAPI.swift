@@ -9,6 +9,7 @@ actor AURORAAPI {
         case missingExportJobID
         case exportFailed(String)
         case exportTimedOut
+        case executionTimedOut(String)
 
         var errorDescription: String? {
             switch self {
@@ -19,19 +20,42 @@ actor AURORAAPI {
             case .missingExportJobID: return "AURORA did not return an export job identifier"
             case .exportFailed(let message): return "AURORA export failed: \(message)"
             case .exportTimedOut: return "AURORA export worker did not finish before the client timeout"
+            case .executionTimedOut(let id): return "AURORA execution is still pending (run \(id)). Reopen it from Result Vault; the server job was not cancelled."
             }
         }
     }
 
     private let session: URLSession
 
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 90
-        config.timeoutIntervalForResource = 900
-        config.waitsForConnectivity = true
-        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        self.session = URLSession(configuration: config)
+    // An injected session supports deterministic offline/retry regression tests.
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 180
+            // Never leave the iPhone waiting indefinitely for connectivity.
+            config.waitsForConnectivity = false
+            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            self.session = URLSession(configuration: config)
+        }
+    }
+
+    // Read-only calls may be repeated after a transient network failure.
+    // POST is deliberately never retried: it can create a second engineering job.
+    private func send(_ request: URLRequest, retryRead: Bool) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch {
+            guard retryRead, !Task.isCancelled,
+                  let urlError = error as? URLError,
+                  urlError.code == .timedOut || urlError.code == .networkConnectionLost else {
+                throw error
+            }
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return try await session.data(for: request)
+        }
     }
 
     private func endpoint(_ path: String) -> URL {
@@ -70,7 +94,7 @@ actor AURORAAPI {
             request.httpBody = governedBody.data()
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await send(request, retryRead: method == "GET")
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
@@ -191,7 +215,7 @@ actor AURORAAPI {
             if terminalStatus(latest) { return latest }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
-        return latest
+        throw APIError.executionTimedOut(id)
     }
 
     func run(_ payload: JSONValue, onUpdate: @Sendable (JSONValue) async -> Void) async throws -> JSONValue {
@@ -208,7 +232,7 @@ actor AURORAAPI {
             }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
-        return latest
+        throw APIError.executionTimedOut(id)
     }
 
     func importOre(data: Data, filename: String) async throws -> JSONValue {
@@ -276,6 +300,8 @@ actor AURORAAPI {
         guard let encoded = governedBody.data() else { throw APIError.invalidResponse }
         request.httpBody = encoded
 
+        // Direct legacy exports may take longer than a normal JSON request.
+        request.timeoutInterval = 180
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
