@@ -9,6 +9,7 @@ actor AURORAAPI {
         case missingExportJobID
         case exportFailed(String)
         case exportTimedOut
+        case executionTimedOut(String)
 
         var errorDescription: String? {
             switch self {
@@ -19,19 +20,42 @@ actor AURORAAPI {
             case .missingExportJobID: return "AURORA did not return an export job identifier"
             case .exportFailed(let message): return "AURORA export failed: \(message)"
             case .exportTimedOut: return "AURORA export worker did not finish before the client timeout"
+            case .executionTimedOut(let id): return "AURORA execution is still pending (run \(id)). Reopen it from Result Vault; the server job was not cancelled."
             }
         }
     }
 
     private let session: URLSession
 
-    init() {
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 90
-        config.timeoutIntervalForResource = 900
-        config.waitsForConnectivity = true
-        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        self.session = URLSession(configuration: config)
+    // An injected session supports deterministic offline/retry regression tests.
+    init(session: URLSession? = nil) {
+        if let session {
+            self.session = session
+        } else {
+            let config = URLSessionConfiguration.default
+            config.timeoutIntervalForRequest = 30
+            config.timeoutIntervalForResource = 180
+            // Never leave the iPhone waiting indefinitely for connectivity.
+            config.waitsForConnectivity = false
+            config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+            self.session = URLSession(configuration: config)
+        }
+    }
+
+    // Read-only calls may be repeated after a transient network failure.
+    // POST is deliberately never retried: it can create a second engineering job.
+    private func send(_ request: URLRequest, retryRead: Bool) async throws -> (Data, URLResponse) {
+        do {
+            return try await session.data(for: request)
+        } catch {
+            guard retryRead, !Task.isCancelled,
+                  let urlError = error as? URLError,
+                  urlError.code == .timedOut || urlError.code == .networkConnectionLost else {
+                throw error
+            }
+            try await Task.sleep(nanoseconds: 300_000_000)
+            return try await session.data(for: request)
+        }
     }
 
     private func endpoint(_ path: String) -> URL {
@@ -70,7 +94,7 @@ actor AURORAAPI {
             request.httpBody = governedBody.data()
         }
 
-        let (data, response) = try await session.data(for: request)
+        let (data, response) = try await send(request, retryRead: method == "GET")
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
@@ -79,10 +103,19 @@ actor AURORAAPI {
         return try JSONDecoder().decode(JSONValue.self, from: data)
     }
 
+    // Compare complete states, not substrings: "not_completed" and
+    // "unblocked" are never proof of completed scientific execution.
+    static func isTerminalState(_ raw: String) -> Bool {
+        let state = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        return Set([
+            "completed", "completed_with_warnings", "complete",
+            "success", "succeeded", "failed", "failure", "error",
+            "blocked", "cancelled", "canceled", "finished"
+        ]).contains(state)
+    }
+
     private func terminalStatus(_ value: JSONValue) -> Bool {
-        let status = (value.firstString(["status", "platform_status", "state"]) ?? "").lowercased()
-        let terminal = ["completed", "success", "succeeded", "failed", "error", "blocked", "cancelled"]
-        return terminal.contains(where: { status.contains($0) })
+        Self.isTerminalState(value.firstString(["status", "platform_status", "state"]) ?? "")
     }
 
     private func download(path: String, fallbackName: String) async throws -> (url: URL, name: String) {
@@ -91,10 +124,13 @@ actor AURORAAPI {
         request.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
-        let (data, response) = try await session.data(for: request)
+        // Disk-backed URLSession download prevents large EPC ZIP bundles from
+        // consuming a proportional amount of iPhone RAM.
+        request.timeoutInterval = 180
+        let (temporary, response) = try await session.download(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
-            throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
+            throw APIError.http(http.statusCode, "AURORA download returned an HTTP error")
         }
 
         let disposition = http.value(forHTTPHeaderField: "Content-Disposition") ?? ""
@@ -107,10 +143,24 @@ actor AURORAAPI {
             .map { String($0).trimmingCharacters(in: CharacterSet(charactersIn: " \"")) }
             ?? fallbackName
 
-        let target = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent(name)
-        try data.write(to: target, options: .atomic)
-        return (target, name)
+        // Sanitize the suggested filename and never overwrite an earlier export.
+        let basename = name.replacingOccurrences(of: "\\", with: "/")
+            .components(separatedBy: "/").last ?? fallbackName
+        let cleanName = basename.components(separatedBy: .controlCharacters)
+            .joined().trimmingCharacters(in: .whitespacesAndNewlines)
+        let filename = cleanName.isEmpty || cleanName == "." || cleanName == ".."
+            ? fallbackName : String(cleanName.prefix(140))
+        let manager = FileManager.default
+        let documents = manager.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        var target = documents.appendingPathComponent(filename, isDirectory: false)
+        if manager.fileExists(atPath: target.path) {
+            let stem = target.deletingPathExtension().lastPathComponent
+            let ext = target.pathExtension
+            let unique = stem + "-" + String(UUID().uuidString.prefix(8)) + (ext.isEmpty ? "" : "." + ext)
+            target = documents.appendingPathComponent(unique, isDirectory: false)
+        }
+        try manager.moveItem(at: temporary, to: target)
+        return (target, target.lastPathComponent)
     }
 
     func health() async throws -> JSONValue {
@@ -191,7 +241,7 @@ actor AURORAAPI {
             if terminalStatus(latest) { return latest }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
-        return latest
+        throw APIError.executionTimedOut(id)
     }
 
     func run(_ payload: JSONValue, onUpdate: @Sendable (JSONValue) async -> Void) async throws -> JSONValue {
@@ -208,7 +258,7 @@ actor AURORAAPI {
             }
             try await Task.sleep(nanoseconds: 1_000_000_000)
         }
-        return latest
+        throw APIError.executionTimedOut(id)
     }
 
     func importOre(data: Data, filename: String) async throws -> JSONValue {
@@ -276,6 +326,8 @@ actor AURORAAPI {
         guard let encoded = governedBody.data() else { throw APIError.invalidResponse }
         request.httpBody = encoded
 
+        // Direct legacy exports may take longer than a normal JSON request.
+        request.timeoutInterval = 180
         let (data, response) = try await session.data(for: request)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {

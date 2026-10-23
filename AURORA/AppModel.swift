@@ -32,6 +32,7 @@ final class AppModel: ObservableObject {
     @Published var serverJobs: [JSONValue] = []
 
     private let api = AURORAAPI()
+    private var deepAuditScheduled = false
 
     func checkHealth() {
         connection = .checking
@@ -48,14 +49,18 @@ final class AppModel: ObservableObject {
 
     func refreshServerState(recoverLatest: Bool = false) async {
         async let vaultTask = try? api.vaultStatus()
-        async let auditTask = try? api.audit()
+        // Routine refresh must not block the Result Vault on an expensive deep audit.
+        async let auditTask = try? api.auditSummary()
         async let telemetryTask = try? api.telemetryRecent()
         async let performanceTask = try? api.performanceProbe()
         async let dagTask = try? api.recentDagRuns()
         async let jobsTask = try? api.recentJobs()
 
         vaultStatus = await vaultTask
-        runtimeAudit = await auditTask
+        if let summary = await auditTask,
+           runtimeAudit?.recursiveFind("engines") == nil {
+            runtimeAudit = summary
+        }
         runtimeTelemetry = await telemetryTask
         performanceSnapshot = await performanceTask
 
@@ -71,6 +76,17 @@ final class AppModel: ObservableObject {
             serverJobs = rows
         } else {
             serverJobs = []
+        }
+
+        // One background deep audit per app session. A long-running audit can
+        // no longer delay project restoration, job history, or rendering.
+        if !deepAuditScheduled {
+            deepAuditScheduled = true
+            Task {
+                if let detail = try? await api.audit() {
+                    runtimeAudit = detail
+                }
+            }
         }
 
         if recoverLatest,
