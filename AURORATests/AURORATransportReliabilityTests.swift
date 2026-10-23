@@ -63,6 +63,15 @@ final class AURORATransportReliabilityTests: XCTestCase {
         return (AURORAAPI(session: session), session)
     }
 
+    func testTerminalStatusIsExactAndNeverAcceptsMisleadingWords() {
+        for status in ["completed", "COMPLETED", "failed", "blocked", "completed_with_warnings", " canceled "] {
+            XCTAssertTrue(AURORAAPI.isTerminalState(status), status)
+        }
+        for status in ["not_completed", "unblocked", "unsuccessful", "running", "queued", "incomplete", "cancelled_pending"] {
+            XCTAssertFalse(AURORAAPI.isTerminalState(status), status)
+        }
+    }
+
     func testHealthRetriesOneTransientReadFailure() async throws {
         AURORATransportStub.reset([
             .failure(.networkConnectionLost),
