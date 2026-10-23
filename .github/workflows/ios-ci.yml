@@ -231,6 +231,18 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project AURORA.xcodeproj -scheme AURORA -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
+      - name: Run native XCTest transport and engineering regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          SIMULATOR_ID="$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((x["udid"] for group in d["devices"].values() for x in group if x.get("isAvailable") and x.get("name","").startswith("iPhone")), ""))')"
+          test -n "$SIMULATOR_ID"
+          xcodebuild -project AURORA.xcodeproj \
+            -scheme AURORA-Phase1-Acceptance \
+            -configuration Debug -sdk iphonesimulator \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO -parallel-testing-enabled NO test
       - name: Package Simulator app
         run: |
           mkdir -p artifacts
