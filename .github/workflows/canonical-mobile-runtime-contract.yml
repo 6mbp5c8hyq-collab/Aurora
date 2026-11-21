@@ -210,5 +210,5 @@ jobs:
             (.ok == true) and
             (.jobs | type == "array") and
             (any(.jobs[]?; ((.job_id // .jobId // .id // "") == $id) and
-              (.status | IN("completed","failed","blocked","cancelled","error","success"))))
+              (.status as $state | ["completed","failed","blocked","cancelled","error","success"] | index($state) != null)))
           ' jobs-history.json
