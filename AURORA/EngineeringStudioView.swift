@@ -19,7 +19,7 @@ struct EngineeringStudioView: View {
     }
 
     private var nodes: [DrawingNode] { runtimeTopology.nodes }
-    private var streams: [EngineeringStream] { RuntimeTopology.streams(from: app.activeResult) }
+    private var streamCount: Int { runtimeTopology.streamCount }
     private var selectedNode: DrawingNode? { nodes.first { $0.id == selectedNodeID } }
     private var engineeringArtifacts: [EngineeringArtifactReference] {
         EngineeringArtifactReference.scan(app.activeResult)
@@ -80,7 +80,7 @@ struct EngineeringStudioView: View {
                 Spacer()
                 VStack(alignment: .trailing, spacing: 6) {
                     StatusBadge(text: runtimeTopology.isRuntime ? "Runtime topology" : "Project basis")
-                    Text("\(nodes.count) units · \(streams.count) streams")
+                    Text("\(nodes.count) units · \(streamCount) streams · \(runtimeTopology.links.count) proven links")
                         .font(.caption.monospaced())
                         .foregroundStyle(.secondary)
                     Text("\(engineeringArtifacts.count) returned artifact refs")
@@ -159,7 +159,7 @@ struct EngineeringStudioView: View {
                 } else {
                     ScrollView(.horizontal, showsIndicators: true) {
                         ZStack(alignment: .topLeading) {
-                            DrawingConnections(nodes: nodes, streams: streams, zoom: zoom, layout: tab == .layout, pid: tab == .pid)
+                            DrawingConnections(nodes: nodes, links: runtimeTopology.links, zoom: zoom, layout: tab == .layout, pid: tab == .pid)
                             ForEach(Array(nodes.enumerated()), id: \.element.id) { index, node in
                                 DrawingNodeCard(node: node, selected: selectedNodeID == node.id, compact: tab == .layout) {
                                     withAnimation(.easeInOut(duration: 0.18)) { selectedNodeID = node.id }
@@ -172,6 +172,12 @@ struct EngineeringStudioView: View {
                         }
                         .frame(width: max(CGFloat(nodes.count) * 205 * zoom, 760), height: tab == .layout ? 470 : 320)
                         .padding(.horizontal, 18)
+                    }
+                    if runtimeTopology.links.isEmpty {
+                        Label("No verified inter-equipment links. Unit order is not evidence of piping or material connectivity.",
+                              systemImage: "exclamationmark.triangle")
+                            .font(.caption)
+                            .foregroundStyle(AuroraTheme.warn)
                     }
                     Text(surfaceCaption)
                         .font(.caption2)
@@ -295,8 +301,8 @@ struct EngineeringStudioView: View {
                     Text(runtimeTopology.isRuntime ? "Runtime engineering topology active" : "Declared-route schematic only")
                         .font(.subheadline.bold())
                     Text(runtimeTopology.isRuntime
-                         ? "Equipment and topology shown above were discovered in the active runtime result. Final EPC coordinates, pipe classes and instrument tags remain authoritative only when explicitly returned."
-                         : "The current drawing is generated from project route declarations. It must not be treated as a final PFD/P&ID/layout until the runtime returns governed engineering geometry and stream data.")
+                         ? "Only streams with explicit from_unit and to_unit tags registered in Phase B are drawn as material links. External streams remain in the stream count, not as invented internal arrows. Final EPC coordinates, pipe classes and instrument tags require separately returned authority."
+                         : "Unit order alone does not prove connectivity: declared project units are displayed without invented material arrows. Final PFD/P&ID/layout approval requires canonical stream endpoints, geometries and formal engineering release.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -326,10 +332,10 @@ struct EngineeringStudioView: View {
 
     private var surfaceCaption: String {
         switch tab {
-        case .pfd: return "PFD mode: ordered process equipment with available runtime stream labels."
-        case .flowsheet: return "Flowsheet mode: unit-operation graph from runtime topology when available."
-        case .pid: return "P&ID mode: schematic process/instrument overlay only. Instrumentation is not invented when tags are absent."
-        case .layout: return "2D mode: schematic arrangement unless the runtime explicitly supplies governed equipment coordinates."
+        case .pfd: return "PFD concept view: only explicit canonical stream endpoints create links; this is not an IFC drawing."
+        case .flowsheet: return "Flowsheet concept view: material edges are read from Phase B stream_table, never consecutive equipment list positions."
+        case .pid: return "P&ID conceptual overlay: verified material links only. Lines, instrument loops and control tags are not inferred."
+        case .layout: return "2D conceptual arrangement: inferred screen positions only. True geometry and routing require separately approved coordinates."
         }
     }
 }
@@ -378,34 +384,79 @@ private struct EngineeringArtifactReference: Identifiable {
     }
 }
 
+/// A graphical edge is admitted only when the Phase B stream register explicitly
+/// identifies two distinct, uniquely registered equipment tags. No UI list order,
+/// generic "streams" property or equipment title can invent a connection.
+struct StudioCanonicalLink: Identifiable, Equatable {
+    let id: String
+    let sourceID: String
+    let fromIndex: Int
+    let toIndex: Int
+    let annotation: String
+
+    static func derive(from graph: EngineeringProcessTopology) -> [StudioCanonicalLink] {
+        var indexByTag: [String: [Int]] = [:]
+        for (index, equipment) in graph.equipment.enumerated() {
+            indexByTag[equipment.sourceTag, default: []].append(index)
+        }
+        return graph.streams.compactMap { stream in
+            guard !stream.sourceID.isEmpty,
+                  let from = stream.fromTag, let to = stream.toTag,
+                  from != to,
+                  let fromIndex = indexByTag[from], fromIndex.count == 1,
+                  let toIndex = indexByTag[to], toIndex.count == 1 else { return nil }
+            var parts = [stream.sourceID]
+            if let solids = stream.solidsTph {
+                parts.append(String(format: "%.3f t/h solids", solids))
+            }
+            if let water = stream.waterTph, water > 0 {
+                parts.append(String(format: "%.3f t/h water", water))
+            }
+            return StudioCanonicalLink(
+                id: stream.id, sourceID: stream.sourceID,
+                fromIndex: fromIndex[0], toIndex: toIndex[0],
+                annotation: parts.joined(separator: " · ")
+            )
+        }
+    }
+}
+
 private struct RuntimeTopology {
     let nodes: [DrawingNode]
+    let links: [StudioCanonicalLink]
+    let streamCount: Int
     let isRuntime: Bool
     let sourceLabel: String
 
     static func parse(result: JSONValue?, projectFlowsheet: String?) -> RuntimeTopology {
+        if let graph = EngineeringProcessTopology.parse(result) {
+            let nodes = DrawingNode.fromCanonical(graph)
+            return RuntimeTopology(
+                nodes: nodes,
+                links: StudioCanonicalLink.derive(from: graph),
+                streamCount: graph.reportedStreamCount,
+                isRuntime: true,
+                sourceLabel: "Source: Phase B canonical equipment + stream_table"
+            )
+        }
         if let result {
             let candidates = ["unit_operations", "equipment", "process_units", "unit_nodes", "nodes"]
             for key in candidates {
                 if let value = result.recursiveFind(key) {
                     let parsed = DrawingNode.fromRuntime(value)
                     if !parsed.isEmpty {
-                        return RuntimeTopology(nodes: parsed, isRuntime: true, sourceLabel: "Source: active runtime · \(key)")
+                        // Runtime nodes alone are NOT an authoritative stream graph.
+                        return RuntimeTopology(nodes: parsed, links: [], streamCount: 0,
+                                               isRuntime: true, sourceLabel: "Source: runtime equipment · endpoints unavailable")
                     }
                 }
             }
         }
-        return RuntimeTopology(nodes: DrawingNode.fromProject(projectFlowsheet), isRuntime: false, sourceLabel: "Source: project flowsheetJSON fallback")
-    }
-
-    static func streams(from result: JSONValue?) -> [EngineeringStream] {
-        guard let result else { return [] }
-        for key in ["streams", "process_streams", "stream_table", "material_streams", "stream_ledger"] {
-            guard let value = result.recursiveFind(key) else { continue }
-            let parsed = EngineeringStream.parse(value)
-            if !parsed.isEmpty { return parsed }
-        }
-        return []
+        return RuntimeTopology(
+            nodes: DrawingNode.fromProject(projectFlowsheet),
+            links: [], streamCount: 0, isRuntime: false,
+            sourceLabel: "Source: project declarations · no stream endpoints"
+        )
     }
 }
 
@@ -423,6 +474,19 @@ private struct DrawingNode: Identifiable, Hashable {
 
     func x(index: Int, zoom: CGFloat) -> CGFloat { CGFloat(index) * 205 * zoom + 110 }
     func layoutY(index: Int) -> CGFloat { 145 + CGFloat(index % 3) * 115 }
+
+    static func fromCanonical(_ graph: EngineeringProcessTopology) -> [DrawingNode] {
+        graph.equipment.enumerated().map { index, equipment in
+            make(
+                title: equipment.sourceTag, kind: "Canonical equipment",
+                index: index, runtime: true,
+                fields: [
+                    ("equipment_tag", equipment.sourceTag),
+                    ("source", "engineering_phase_b.equipment_sizing.register")
+                ]
+            )
+        }
+    }
 
     static func fromRuntime(_ value: JSONValue) -> [DrawingNode] {
         switch value {
@@ -512,79 +576,62 @@ private struct DrawingNode: Identifiable, Hashable {
     }
 }
 
-private struct EngineeringStream: Identifiable {
-    let id: String
-    let name: String
-    let label: String
-
-    static func parse(_ value: JSONValue) -> [EngineeringStream] {
-        switch value {
-        case .array(let items): return items.enumerated().compactMap { parseItem($0.element, index: $0.offset, hint: nil) }
-        case .object(let object):
-            if object.values.allSatisfy({ if case .object = $0 { return true }; return false }) {
-                return object.keys.sorted().enumerated().compactMap { index, key in
-                    guard let item = object[key] else { return nil }
-                    return parseItem(item, index: index, hint: key)
-                }
-            }
-            if let one = parseItem(value, index: 0, hint: nil) { return [one] }
-            return []
-        default: return []
-        }
-    }
-
-    private static func parseItem(_ value: JSONValue, index: Int, hint: String?) -> EngineeringStream? {
-        guard case .object(let object) = value else { return nil }
-        let name = hint ?? first(object, ["name", "stream_name", "id", "tag", "label"]) ?? "S\(index + 1)"
-        let mass = first(object, ["mass_flow_tph", "mass_tph", "flow_tph", "solids_tph"])
-        let volume = first(object, ["volumetric_flow_m3_h", "volume_flow_m3_h", "flow_m3_h"])
-        let solids = first(object, ["solids_pct", "percent_solids", "solids_percent"])
-        var parts: [String] = []
-        if let mass { parts.append("\(mass) t/h") }
-        if let volume { parts.append("\(volume) m³/h") }
-        if let solids { parts.append("\(solids)% solids") }
-        return EngineeringStream(id: "\(index)-\(name)", name: name, label: parts.isEmpty ? name : "\(name) · " + parts.joined(separator: " · "))
-    }
-
-    private static func first(_ object: [String: JSONValue], _ keys: [String]) -> String? {
-        for key in keys { if let value = object[key]?.stringValue, !value.isEmpty { return value } }
-        return nil
-    }
-}
-
 private struct DrawingConnections: View {
     let nodes: [DrawingNode]
-    let streams: [EngineeringStream]
+    let links: [StudioCanonicalLink]
     let zoom: CGFloat
     let layout: Bool
     let pid: Bool
 
     var body: some View {
         Canvas { context, _ in
-            for index in 0..<max(nodes.count - 1, 0) {
-                let start = CGPoint(x: CGFloat(index) * 205 * zoom + 165, y: layout ? nodes[index].layoutY(index: index) : 155)
-                let end = CGPoint(x: CGFloat(index + 1) * 205 * zoom + 55, y: layout ? nodes[index + 1].layoutY(index: index + 1) : 155)
+            for link in links {
+                guard nodes.indices.contains(link.fromIndex),
+                      nodes.indices.contains(link.toIndex) else { continue }
+                let forward = link.fromIndex < link.toIndex
+                let sign: CGFloat = forward ? 1 : -1
+                let fromX = nodes[link.fromIndex].x(index: link.fromIndex, zoom: zoom)
+                let toX = nodes[link.toIndex].x(index: link.toIndex, zoom: zoom)
+                let startY: CGFloat = layout ? nodes[link.fromIndex].layoutY(index: link.fromIndex) : 155
+                let endY: CGFloat = layout ? nodes[link.toIndex].layoutY(index: link.toIndex) : 155
+                let start = CGPoint(x: fromX + sign * 83, y: startY)
+                let end = CGPoint(x: toX - sign * 83, y: endY)
+                let nonAdjacent = abs(link.toIndex - link.fromIndex) > 1
                 var path = Path()
                 path.move(to: start)
-                if layout {
-                    let midpoint = (start.x + end.x) / 2
-                    path.addCurve(to: end, control1: CGPoint(x: midpoint, y: start.y), control2: CGPoint(x: midpoint, y: end.y))
+                let textY: CGFloat
+                if nonAdjacent || layout {
+                    // Avoid drawing a false pipe straight through intermediate
+                    // equipment; screen coordinates are purely schematic.
+                    let lane: CGFloat = layout
+                        ? min(startY, endY) - 65
+                        : (forward ? 245 : 65)
+                    path.addLine(to: CGPoint(x: start.x + sign * 16, y: lane))
+                    path.addLine(to: CGPoint(x: end.x - sign * 16, y: lane))
+                    path.addLine(to: end)
+                    textY = lane - 15
                 } else {
                     path.addLine(to: end)
+                    textY = min(start.y, end.y) - 18
                 }
-                context.stroke(path, with: .color(AuroraTheme.accent.opacity(0.72)), style: StrokeStyle(lineWidth: pid ? 2 : 3, lineCap: .round, dash: pid ? [8, 4] : []))
+                context.stroke(
+                    path, with: .color(AuroraTheme.accent.opacity(0.72)),
+                    style: StrokeStyle(lineWidth: pid ? 2 : 3,
+                                       lineCap: .round, dash: pid ? [8, 4] : [])
+                )
 
                 let arrow = Path { p in
-                    p.move(to: CGPoint(x: end.x - 9, y: end.y - 6))
+                    p.move(to: CGPoint(x: end.x - sign * 9, y: end.y - 6))
                     p.addLine(to: end)
-                    p.addLine(to: CGPoint(x: end.x - 9, y: end.y + 6))
+                    p.addLine(to: CGPoint(x: end.x - sign * 9, y: end.y + 6))
                 }
-                context.stroke(arrow, with: .color(AuroraTheme.gold), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-
-                if index < streams.count {
-                    let text = Text(streams[index].label).font(.system(size: 9, weight: .semibold, design: .monospaced)).foregroundStyle(AuroraTheme.gold)
-                    context.draw(text, at: CGPoint(x: (start.x + end.x) / 2, y: min(start.y, end.y) - 18), anchor: .center)
-                }
+                context.stroke(arrow, with: .color(AuroraTheme.gold),
+                               style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                let caption = Text(link.annotation)
+                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                    .foregroundStyle(AuroraTheme.gold)
+                context.draw(caption, at: CGPoint(x: (start.x + end.x) / 2,
+                                                   y: textY), anchor: .center)
             }
         }
         .allowsHitTesting(false)
