@@ -42,6 +42,7 @@ struct ProcessBalanceWorkspaceView: View {
             VStack(alignment: .leading, spacing: 18) {
                 hero
                 summary
+                EngineeringIntegrityPanel(result: app.activeResult)
                 authorityBoundary
                 evidenceComposition
                 streamLedger
