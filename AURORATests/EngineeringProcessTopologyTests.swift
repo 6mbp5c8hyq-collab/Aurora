@@ -132,4 +132,66 @@ final class EngineeringProcessTopologyTests: XCTestCase {
         XCTAssertNil(graph.reportedHoldCount)
         XCTAssertEqual(graph.findings.count, 0)
     }
+
+    func testStudioDrawsOnlyEvidenceBoundCanonicalEdgesNotAdjacentEquipment() throws {
+        let graph=try XCTUnwrap(EngineeringProcessTopology.parse(canonicalResult()))
+        let links=StudioCanonicalLink.derive(from: graph)
+        XCTAssertEqual(links.map(\.sourceID), ["I"])
+        XCTAssertEqual(links[0].fromIndex, 0)
+        XCTAssertEqual(links[0].toIndex, 1)
+        XCTAssertTrue(links[0].annotation.contains("8.000 t/h solids"))
+        XCTAssertFalse(links.contains { $0.sourceID == "F" || $0.sourceID == "P"
+            || $0.sourceID == "R" || $0.sourceID == "Z" },
+            "Feed/products and unregistered endpoints must not create invented internal arrows")
+    }
+
+    func testStudioPreservesBranchesAndReverseRecycleWithoutFabricatedAdjacency() {
+        func unit(_ tag: String, index: Int) -> EngineeringProcessTopology.Equipment {
+            .init(id: "equipment[\(index)]",sourceTag:tag)
+        }
+        func stream(_ id: String, _ from: String?, _ to: String?) -> EngineeringProcessTopology.Stream {
+            .init(id:id,sourceID:id,fromTag:from,toTag:to,solidsTph:10,waterTph:0)
+        }
+        let graph=EngineeringProcessTopology(
+            equipment:[unit("U1",index:0),unit("U2",index:1),unit("U3",index:2)],
+            streams:[
+                stream("BRANCH-13","U1","U3"),
+                stream("RECYCLE-31","U3","U1"),
+                stream("FEED",nil,"U1"),
+                stream("UNREGISTERED","U1","UNKNOWN"),
+                stream("UNKNOWN_SOURCE","UNKNOWN","U2"),
+                stream("INCOMPLETE",nil,nil),
+                stream("SELF-LOOP","U2","U2")
+            ],
+            findings:[],reportedEquipmentCount:3,reportedStreamCount:7,
+            reportedIssueCount:nil,reportedHoldCount:nil
+        )
+        let edges=StudioCanonicalLink.derive(from:graph)
+        XCTAssertEqual(edges.map(\.sourceID),["BRANCH-13","RECYCLE-31"])
+        XCTAssertEqual(edges.map(\.fromIndex),[0,2])
+        XCTAssertEqual(edges.map(\.toIndex),[2,0])
+        XCTAssertFalse(edges.contains { $0.fromIndex == 0 && $0.toIndex == 1 },
+                      "Consecutive U1,U2 ordering must never fabricate an edge")
+        XCTAssertFalse(edges.contains { $0.fromIndex == 1 && $0.toIndex == 2 },
+                      "Consecutive U2,U3 ordering must never fabricate an edge")
+    }
+
+    func testDuplicateCanonicalEquipmentTagNeverAuthorizesAmbiguousConnection() {
+        let graph=EngineeringProcessTopology(
+            equipment:[
+                .init(id:"0",sourceTag:"U1"),
+                .init(id:"1",sourceTag:"U1"),
+                .init(id:"2",sourceTag:"U2")
+            ],
+            streams:[
+                .init(id:"S1",sourceID:"S1",fromTag:"U1",toTag:"U2",solidsTph:1,waterTph:0),
+                .init(id:"S2",sourceID:"S2",fromTag:"U2",toTag:"U1",solidsTph:1,waterTph:0)
+            ],
+            findings:[],reportedEquipmentCount:3,reportedStreamCount:2,
+            reportedIssueCount:nil,reportedHoldCount:nil
+        )
+        XCTAssertTrue(StudioCanonicalLink.derive(from:graph).isEmpty,
+                      "Duplicate equipment identities must block graphical endpoint selection")
+    }
+
 }
