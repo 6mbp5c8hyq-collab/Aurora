@@ -21,9 +21,12 @@ enum AURORAAPITokenStore {
     }
 
     static func account(for endpoint: URL) -> String? {
-        guard endpoint.scheme?.lowercased() == "https",
-              let host = endpoint.host?.lowercased(), !host.isEmpty else { return nil }
-        let port = endpoint.port.map { ":\($0)" } ?? ""
+        // AURORAAPI builds relative API URLs; always resolve the actual origin
+        // before enforcing a bearer-token destination match.
+        let absolute = endpoint.absoluteURL
+        guard absolute.scheme?.lowercased() == "https",
+              let host = absolute.host?.lowercased(), !host.isEmpty else { return nil }
+        let port = absolute.port.map { ":\($0)" } ?? ""
         return "https://\(host)\(port)"
     }
 
