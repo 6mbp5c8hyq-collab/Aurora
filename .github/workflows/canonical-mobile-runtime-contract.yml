@@ -197,13 +197,18 @@ jobs:
             ((.requested_module // .requestedModule // .payload.requested_module // .payload.requestedModule // "") == $engine)
           ' engine-job.json
 
-      - name: Verify selected-engine job appears in persisted job listing
+      - name: Verify selected-engine job appears in persisted history, including failed terminal jobs
         run: |
           set -euo pipefail
+          # The default /api/jobs/recent route is a small dashboard preview
+          # showing active jobs plus the latest completed one; terminal FAILED
+          # jobs are deliberately omitted from that abbreviated summary.
+          # Query the owner/project-scoped persisted history instead.
           curl --fail --silent --show-error --retry 3 \
-            "$AURORA_BACKEND/api/jobs/recent" -o jobs-recent.json
+            "$AURORA_BACKEND/api/jobs/history?project_id=77777777-2222-3333-4444-555555555555&limit=100" -o jobs-history.json
           jq -e --arg id "$JOB_ID" '
             (.ok == true) and
             (.jobs | type == "array") and
-            (any(.jobs[]?; ((.job_id // .jobId // .id // "") == $id)))
-          ' jobs-recent.json
+            (any(.jobs[]?; ((.job_id // .jobId // .id // "") == $id) and
+              (.status | IN("completed","failed","blocked","cancelled","error","success"))))
+          ' jobs-history.json
