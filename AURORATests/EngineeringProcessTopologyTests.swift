@@ -128,7 +128,8 @@ final class EngineeringProcessTopologyTests: XCTestCase {
         XCTAssertEqual(graph.streams.count, 1)
         XCTAssertNil(graph.streams[0].solidsTph)
         XCTAssertNil(graph.streams[0].waterTph)
-        XCTAssertEqual(graph.reportedIssueCount, 0)
+        XCTAssertNil(graph.reportedIssueCount)
+        XCTAssertNil(graph.reportedHoldCount)
         XCTAssertEqual(graph.findings.count, 0)
     }
 }
