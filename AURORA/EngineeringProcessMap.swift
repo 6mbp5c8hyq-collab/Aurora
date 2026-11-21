@@ -116,16 +116,16 @@ struct EngineeringProcessTopology {
         // unregistered equipment names to synthetic graph nodes.
         streams.filter { stream in
             finding.streamIDs.contains(stream.sourceID)
-                || (stream.fromTag.map(finding.equipmentTags.contains) ?? false)
-                || (stream.toTag.map(finding.equipmentTags.contains) ?? false)
+                || (stream.fromTag.map { finding.equipmentTags.contains($0) } ?? false)
+                || (stream.toTag.map { finding.equipmentTags.contains($0) } ?? false)
         }
     }
 
     func relatedFindings(to stream: Stream) -> [Finding] {
-        findings.filter {
-            $0.streamIDs.contains(stream.sourceID)
-                || (stream.fromTag.map($0.equipmentTags.contains) ?? false)
-                || (stream.toTag.map($0.equipmentTags.contains) ?? false)
+        findings.filter { finding in
+            finding.streamIDs.contains(stream.sourceID)
+                || (stream.fromTag.map { finding.equipmentTags.contains($0) } ?? false)
+                || (stream.toTag.map { finding.equipmentTags.contains($0) } ?? false)
         }
     }
 }
@@ -238,8 +238,9 @@ struct EngineeringProcessMap: View {
                             }
                         }
                     }
-                    if graph.streams.count > 400 || graph.equipment.count > 300
-                        || graph.reportedStreamCount > visible.count && visible.count >= 80 {
+                    if graph.reportedStreamCount > graph.streams.count
+                        || graph.reportedEquipmentCount > graph.equipment.count
+                        || visible.count > 80 || graph.reportedIssueCount + graph.reportedHoldCount > 60 {
                         Text("A bounded preview is displayed. The complete source remains in the canonical result.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
