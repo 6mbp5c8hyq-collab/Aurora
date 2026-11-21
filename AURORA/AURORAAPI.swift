@@ -45,8 +45,9 @@ actor AURORAAPI {
     // Read-only calls may be repeated after a transient network failure.
     // POST is deliberately never retried: it can create a second engineering job.
     private func send(_ request: URLRequest, retryRead: Bool) async throws -> (Data, URLResponse) {
+        let authorized = AURORAAuthTransport.authorize(request, backend: AppConfig.backend)
         do {
-            return try await session.data(for: request)
+            return try await session.data(for: authorized)
         } catch {
             guard retryRead, !Task.isCancelled,
                   let urlError = error as? URLError,
@@ -54,7 +55,7 @@ actor AURORAAPI {
                 throw error
             }
             try await Task.sleep(nanoseconds: 300_000_000)
-            return try await session.data(for: request)
+            return try await session.data(for: authorized)
         }
     }
 
@@ -127,7 +128,8 @@ actor AURORAAPI {
         // Disk-backed URLSession download prevents large EPC ZIP bundles from
         // consuming a proportional amount of iPhone RAM.
         request.timeoutInterval = 180
-        let (temporary, response) = try await session.download(for: request)
+        let authorized = AURORAAuthTransport.authorize(request, backend: AppConfig.backend)
+        let (temporary, response) = try await session.download(for: authorized)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(http.statusCode, "AURORA download returned an HTTP error")
@@ -328,7 +330,8 @@ actor AURORAAPI {
 
         // Direct legacy exports may take longer than a normal JSON request.
         request.timeoutInterval = 180
-        let (data, response) = try await session.data(for: request)
+        let authorized = AURORAAuthTransport.authorize(request, backend: AppConfig.backend)
+        let (data, response) = try await session.data(for: authorized)
         guard let http = response as? HTTPURLResponse else { throw APIError.invalidResponse }
         guard (200..<300).contains(http.statusCode) else {
             throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
