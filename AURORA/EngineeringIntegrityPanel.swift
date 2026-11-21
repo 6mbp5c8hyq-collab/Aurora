@@ -169,8 +169,8 @@ struct EngineeringIntegrityPanel: View {
     private func codeSection(_ title: String, values: [String], color: Color) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title).font(.subheadline.bold()).foregroundStyle(color)
-            ForEach(Array(values.prefix(8).enumerated()), id: \.offset) { _, code in
-                Text(code).font(.caption.monospaced()).fixedSize(horizontal: false, vertical: true)
+            ForEach(Array(values.prefix(8).enumerated()), id: \.offset) { entry in
+                Text(entry.element).font(.caption.monospaced()).fixedSize(horizontal: false, vertical: true)
             }
             if values.count > 8 {
                 Text("\(values.count - 8) additional entries are retained in the full canonical response.")
