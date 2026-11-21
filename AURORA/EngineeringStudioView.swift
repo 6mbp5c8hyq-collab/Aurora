@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import Foundation
 
 struct EngineeringStudioView: View {
     @EnvironmentObject private var app: AppModel
