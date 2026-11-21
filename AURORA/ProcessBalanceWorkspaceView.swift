@@ -38,15 +38,24 @@ struct ProcessBalanceWorkspaceView: View {
     private var residualFields: [PBField] { balances.flatMap(\.residualFields) }
 
     var body: some View {
+        ScrollViewReader { navigator in
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
                 summary
                 EngineeringIntegrityPanel(result: app.activeResult)
+                EngineeringProcessMap(result: app.activeResult) { sourceID in
+                    guard let linked = streams.first(where: { $0.value(["stream_id"]) == sourceID }) else { return }
+                    query = ""
+                    withAnimation {
+                        selectedStreamID = linked.id
+                        navigator.scrollTo("canonical-stream-inspector", anchor: .top)
+                    }
+                }
                 authorityBoundary
                 evidenceComposition
                 streamLedger
-                if let selectedStream { streamInspector(selectedStream) }
+                if let selectedStream { streamInspector(selectedStream).id("canonical-stream-inspector") }
                 balanceMatrix
                 if let selectedBalance { balanceInspector(selectedBalance) }
                 residualLedger
@@ -60,6 +69,7 @@ struct ProcessBalanceWorkspaceView: View {
         .onChange(of: app.lastExportURL) { _, value in
             guard exportRequested, let value else { return }
             previewURL = value
+        }
         }
     }
 
@@ -551,7 +561,7 @@ private struct PBEvidenceCount: Identifiable {
     let count: Int
 }
 
-private enum PBParser {
+enum PBParser {
     private static let streamKeys = ["streams", "process_streams", "stream_table", "material_streams", "stream_ledger"]
     private static let balanceKeys = [
         "mass_balance", "water_balance", "mineral_balance", "element_balance", "species_balance", "charge_balance",
@@ -560,6 +570,15 @@ private enum PBParser {
 
     static func streams(from result: JSONValue?) -> [PBStream] {
         guard let result else { return [] }
+        // Canonical engineering streams must outrank incidental data lists
+        // called "streams" elsewhere in a large execution response.
+        if let phase = result.recursiveFind("engineering_phase_b"),
+           case .object(let phaseFields) = phase,
+           let mass = phaseFields["mass_balance"], case .object(let massFields) = mass,
+           let streamTable = massFields["stream_table"] {
+            let canonical = parseStreams(streamTable, root: "engineering_phase_b.mass_balance.stream_table")
+            if !canonical.isEmpty { return canonical }
+        }
         for key in streamKeys {
             guard let value = result.recursiveFind(key) else { continue }
             let parsed = parseStreams(value, root: key)
@@ -600,7 +619,7 @@ private enum PBParser {
 
     private static func parseStream(_ value: JSONValue, nameHint: String?, id: String) -> PBStream? {
         guard case .object(let object) = value else { return nil }
-        let name = nameHint ?? firstString(object, ["name", "stream_name", "stream", "id", "tag", "label"]) ?? id
+        let name = nameHint ?? firstString(object, ["name", "stream_name", "stream_id", "stream", "id", "tag", "label"]) ?? id
         let fields = flatten(object, root: id)
         guard !fields.isEmpty else { return nil }
         return PBStream(id: id, name: name, fields: fields)
