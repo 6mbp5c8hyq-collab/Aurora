@@ -4,6 +4,9 @@ struct RuntimeDiagnosticsView: View {
     @EnvironmentObject private var app: AppModel
     @State private var backendText = AppConfig.backend.absoluteString
     @State private var saveMessage: String?
+    @State private var tokenDraft = ""
+    @State private var tokenStored = AURORAAPITokenStore.load(for: AppConfig.backend) != nil
+    @State private var tokenMessage: String?
 
     var body: some View {
         ScrollView {
@@ -71,6 +74,9 @@ struct RuntimeDiagnosticsView: View {
                             try AppConfig.saveBackend(backendText)
                             backendText = AppConfig.backend.absoluteString
                             saveMessage = "Backend saved."
+                            tokenDraft = ""
+                            tokenStored = AURORAAPITokenStore.load(for: AppConfig.backend) != nil
+                            tokenMessage = nil
                             app.checkHealth()
                         } catch {
                             saveMessage = error.localizedDescription
@@ -92,6 +98,58 @@ struct RuntimeDiagnosticsView: View {
                         Text(saveMessage).font(.caption).foregroundStyle(.secondary)
                     }
                 }
+
+                Divider().opacity(0.18)
+
+                HStack {
+                    Text("Secure API Credential").font(.headline)
+                    Spacer()
+                    StatusBadge(text: tokenStored ? "Keychain configured" : "Not configured")
+                }
+                SecureField("Paste issued AURORA bearer token", text: $tokenDraft)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .textFieldStyle(.roundedBorder)
+                    .privacySensitive()
+                HStack(spacing: 10) {
+                    Button {
+                        do {
+                            try AURORAAPITokenStore.save(tokenDraft, for: AppConfig.backend)
+                            tokenDraft = ""
+                            tokenStored = true
+                            tokenMessage = "Credential stored in device-only Keychain."
+                            app.checkHealth()
+                            Task { await app.refreshServerState() }
+                        } catch {
+                            tokenMessage = error.localizedDescription
+                        }
+                    } label: {
+                        Label("Save secure token", systemImage: "lock.shield")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(tokenDraft.isEmpty)
+                    Button(role: .destructive) {
+                        do {
+                            try AURORAAPITokenStore.remove(for: AppConfig.backend)
+                            tokenDraft = ""
+                            tokenStored = false
+                            tokenMessage = "Credential removed from this device."
+                            app.checkHealth()
+                        } catch {
+                            tokenMessage = error.localizedDescription
+                        }
+                    } label: {
+                        Label("Remove token", systemImage: "trash")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!tokenStored)
+                }
+                if let tokenMessage {
+                    Text(tokenMessage).font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Credentials are stored per HTTPS backend origin in iOS Keychain, not in project files or UserDefaults. The backend must enable and provision authentication separately. Operator access is limited to individually owned runs; global engineering exports and governance require an administrator.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }
