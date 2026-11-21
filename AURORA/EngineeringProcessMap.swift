@@ -32,8 +32,8 @@ struct EngineeringProcessTopology {
     let findings: [Finding]
     let reportedEquipmentCount: Int
     let reportedStreamCount: Int
-    let reportedIssueCount: Int
-    let reportedHoldCount: Int
+    let reportedIssueCount: Int?
+    let reportedHoldCount: Int?
 
     static func parse(_ result: JSONValue?) -> EngineeringProcessTopology? {
         guard let source = result?.recursiveFind("engineering_phase_b"),
@@ -74,12 +74,12 @@ struct EngineeringProcessTopology {
         }
 
         var findings: [Finding] = []
-        var issueCount = 0
-        var holdCount = 0
+        var issueCount: Int?
+        var holdCount: Int?
         if let audit = result?.recursiveFind("engineering_cross_phase_integrity"),
            case .object(let integrity) = audit {
-            func parseFindings(_ key: String, classification: String) -> Int {
-                guard let raw = integrity[key], case .array(let records) = raw else { return 0 }
+            func parseFindings(_ key: String, classification: String) -> Int? {
+                guard let raw = integrity[key], case .array(let records) = raw else { return nil }
                 for (index, record) in records.prefix(200).enumerated() {
                     guard case .object(let fields) = record else { continue }
                     let tags = ["tag", "tag_a", "tag_b", "equipment_tag"]
@@ -183,12 +183,16 @@ struct EngineeringProcessMap: View {
                     HStack(spacing: 10) {
                         Text("\(graph.reportedEquipmentCount) registered units")
                         Text("\(graph.reportedStreamCount) streams")
-                        Text("\(graph.reportedIssueCount) blocking findings")
-                        Text("\(graph.reportedHoldCount) design holds")
+                        Text("\(graph.reportedIssueCount.map { String($0) } ?? "unreported") blocking findings")
+                        Text("\(graph.reportedHoldCount.map { String($0) } ?? "unreported") design holds")
                     }
                     .font(.caption2.monospaced())
                     .foregroundStyle(.secondary)
 
+                    if graph.reportedIssueCount == nil || graph.reportedHoldCount == nil {
+                        Text("Cross-phase finding lists were not returned. No clean audit or release status is implied.")
+                            .font(.caption).foregroundStyle(AuroraTheme.warn)
+                    }
                     if !graph.findings.isEmpty {
                         Text("Select an audit finding to isolate its exact linked streams")
                             .font(.subheadline.bold())
@@ -228,7 +232,9 @@ struct EngineeringProcessMap: View {
                     }
 
                     if visible.isEmpty {
-                        Text("No canonical stream is linked to this reference. The missing link remains unresolved; no connection is inferred.")
+                        Text(graph.reportedStreamCount > graph.streams.count
+                            ? "No source-linked stream is visible in the bounded preview; consult the complete canonical result."
+                            : "No canonical stream is linked to this reference. The missing link remains unresolved; no connection is inferred.")
                             .font(.caption)
                             .foregroundStyle(AuroraTheme.warn)
                     } else {
@@ -240,7 +246,7 @@ struct EngineeringProcessMap: View {
                     }
                     if graph.reportedStreamCount > graph.streams.count
                         || graph.reportedEquipmentCount > graph.equipment.count
-                        || visible.count > 80 || graph.reportedIssueCount + graph.reportedHoldCount > 60 {
+                        || visible.count > 80 || (graph.reportedIssueCount ?? 0) + (graph.reportedHoldCount ?? 0) > 60 {
                         Text("A bounded preview is displayed. The complete source remains in the canonical result.")
                             .font(.caption2).foregroundStyle(.secondary)
                     }
