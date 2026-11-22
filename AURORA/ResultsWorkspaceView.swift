@@ -87,7 +87,14 @@ struct ResultsWorkspaceView: View {
             "validation_level",
             "claim_ceiling"
         ]
-        return Array(rows.filter { row in
+        let available = rows
+        guard available.contains(where: { row in
+            let key = row.path.lowercased()
+            return key.contains("measured_tail_assay_count")
+                || key.contains("holdout_rmse_pct_points")
+                || key.contains("validation_rmse_pct_points")
+        }) else { return [] }
+        return Array(available.filter { row in
             let key = row.path.lowercased()
             return names.contains { name in
                 key == name || key.hasSuffix("." + name)
