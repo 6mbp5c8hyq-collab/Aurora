@@ -73,11 +73,35 @@ struct ResultsWorkspaceView: View {
 
     private var activeProject: AuroraProject? { projects.first }
 
+    // Only facts already returned by the canonical backend are shown.
+    // No client-side prediction, inferred validation pass or synthetic metric.
+    private var predictiveEvidenceRows: [GovernedResultRow] {
+        let names = [
+            "measured_tail_assay_count",
+            "max_measured_balance_error_pct_points",
+            "component_balance_tolerance_pct_points",
+            "holdout_rmse_pct_points",
+            "validation_rmse_pct_points",
+            "validation_mae_pct_points",
+            "holdout_acceptance_rmse_pct_points",
+            "validation_level",
+            "claim_ceiling"
+        ]
+        return Array(rows.filter { row in
+            let key = row.path.lowercased()
+            return names.contains { name in
+                key == name || key.hasSuffix("." + name)
+                    || key.contains("." + name + ".")
+            }
+        }.prefix(25))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
                 ScientificValidationAggregateBanner(result: app.activeResult)
+                predictiveEvidencePanel
                 filterPanel
                 summaryGrid
                 semanticDistribution
@@ -123,6 +147,40 @@ struct ResultsWorkspaceView: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     StatusBadge(text: app.activeResult == nil ? "No active result" : ResultTools.status(app.activeResult))
                     Text(app.activeResultOrigin).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var predictiveEvidencePanel: some View {
+        if !predictiveEvidenceRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("Predictive Testwork Evidence", systemImage: "checkmark.shield")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(predictiveEvidenceRows.count) returned fields")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Measured closure, holdout errors and claim limitations are shown verbatim from the canonical server. Missing measurements are never inferred; a successful software test is not plant validation.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(predictiveEvidenceRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
                 }
             }
         }
