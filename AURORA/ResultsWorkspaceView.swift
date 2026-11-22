@@ -81,6 +81,12 @@ struct ResultsWorkspaceView: View {
             "max_measured_balance_error_pct_points",
             "component_balance_tolerance_pct_points",
             "holdout_rmse_pct_points",
+            "holdout_max_abs_error_pct_points",
+            "holdout_signed_bias_pct_points",
+            "target_gap_fraction",
+            "maximum_interpolation_gap_fraction",
+            "all_rows_have_measured_tail_assays",
+            "require_measured_tail_assay",
             "validation_rmse_pct_points",
             "validation_mae_pct_points",
             "holdout_acceptance_rmse_pct_points",
@@ -172,7 +178,7 @@ struct ResultsWorkspaceView: View {
                             .font(.caption.monospaced())
                             .foregroundStyle(.secondary)
                     }
-                    Text("Measured closure, holdout errors and claim limitations are shown verbatim from the canonical server. Missing measurements are never inferred; a successful software test is not plant validation.")
+                    Text("Measured closure, local calibration support, holdout errors and claim limitations are shown verbatim from the canonical server. Missing measurements are never inferred; a successful software test is not plant validation.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(predictiveEvidenceRows) { field in
