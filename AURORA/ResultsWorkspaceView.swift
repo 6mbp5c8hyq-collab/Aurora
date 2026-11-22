@@ -73,6 +73,17 @@ struct ResultsWorkspaceView: View {
 
     private var activeProject: AuroraProject? { projects.first }
 
+    private var dryOxideFeasibilityRows: [GovernedResultRow] {
+        // The canonical engineering audit may include several exclusive
+        // routes. Report only returned chemistry bounds; do not derive
+        // imaginary assays from the assumed solids yield.
+        Array(rows.filter { row in
+            let path = row.path.lowercased()
+            return path.hasPrefix("dry_pretreatment_oxide_feasibility.")
+                || path.contains(".dry_pretreatment_oxide_feasibility.")
+        }.prefix(100))
+    }
+
     // Only facts already returned by the canonical backend are shown.
     // No client-side prediction, inferred validation pass or synthetic metric.
     private var predictiveEvidenceRows: [GovernedResultRow] {
@@ -115,6 +126,7 @@ struct ResultsWorkspaceView: View {
                 hero
                 ScientificValidationAggregateBanner(result: app.activeResult)
                 predictiveEvidencePanel
+                dryOxideFeasibilityPanel
                 filterPanel
                 summaryGrid
                 semanticDistribution
@@ -182,6 +194,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(predictiveEvidenceRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dryOxideFeasibilityPanel: some View {
+        if !dryOxideFeasibilityRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Dry Glauconite Oxide Feasibility", systemImage: "atom")
+                        .font(.headline)
+                    Text("Conservation-only screen at the treated dry-product boundary before NPK additions and suspension water. A missing-assay HOLD or a theoretical bound cannot be treated as a verified product grade.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(dryOxideFeasibilityRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
