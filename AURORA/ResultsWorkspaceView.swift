@@ -539,7 +539,7 @@ struct ResultsWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Pilot Fe/K Analytical QC", systemImage: "checkmark.shield")
                         .font(.headline)
-                    Text("Checks Fe2O3/K2O analytical repeats, CRM recovery and blank/LOQ. An expert-review-ready flag additionally requires independent held-out Fe/K models, 8+3 training sensitivity and separately collected field-sample duplicates. This does NOT certify lab accreditation, representative field sampling, plant grade or scale-up.")
+                    Text("Analytical repeatability requires independent aliquots, reference recovery and blank/LOQ. Expert-review eligibility also requires separate held-out Fe/K models, 8+3 batch sensitivity, independent field increments and measured post-screen PSD/liberation domain support. Neither laboratory accreditation nor industrial performance is certified.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticAnalyticalQCRows) { field in
