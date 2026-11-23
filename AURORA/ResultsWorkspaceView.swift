@@ -84,6 +84,16 @@ struct ResultsWorkspaceView: View {
         }.prefix(100))
     }
 
+    private var fourStreamAssayRows: [GovernedResultRow] {
+        // Read canonical upstream outputs only, with no client-side grade
+        // reconstruction. Missing sample evidence remains an explicit HOLD.
+        Array(rows.filter { row in
+            let path = row.path.lowercased()
+            return path.hasPrefix("four_stream_assay_reconciliation.")
+                || path.contains(".four_stream_assay_reconciliation.")
+        }.prefix(80))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -149,6 +159,7 @@ struct ResultsWorkspaceView: View {
                 ScientificValidationAggregateBanner(result: app.activeResult)
                 predictiveEvidencePanel
                 dryOxideFeasibilityPanel
+                fourStreamAssayPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -245,6 +256,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(dryOxideFeasibilityRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fourStreamAssayPanel: some View {
+        if !fourStreamAssayRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Glauconite Four-Stream Fe/K Assay Audit", systemImage: "checkmark.shield")
+                        .font(.headline)
+                    Text("Source-declared feed, screen reject, magnetic reject and product dry-basis assays are reconciled separately. Scenario-calculated dry flows are NOT laboratory flow measurements; a numerical closure pass is not a plant or assay certificate.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(fourStreamAssayRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
