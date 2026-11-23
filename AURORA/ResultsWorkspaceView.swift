@@ -184,6 +184,8 @@ struct ResultsWorkspaceView: View {
             "ready_for_expert_review_only",
             "dual_fe_k_heldout_passed", "batch_deletion_screen_passed",
             "analytical_qc_screen_passed",
+            "field_sampling_qc_screen_passed",
+            "field_sampling_representativity_verified",
             "source_report_credibility_independently_verified",
             "full_scale_magnetic_design_authorized",
             "industrial_grade_or_recovery_certified", "claim_ceiling",
@@ -506,7 +508,7 @@ struct ResultsWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Pilot Fe/K Analytical QC", systemImage: "checkmark.shield")
                         .font(.headline)
-                    Text("Screens Fe2O3/K2O paired dry-sample analyses, CRM recovery and analytical blank/LOQ evidence. An expert-review-ready flag also requires two held-out oxide models and 8+3 training sensitivity. This does NOT certify lab accreditation, field sample representativity, plant grade or scale-up.")
+                    Text("Checks Fe2O3/K2O analytical repeats, CRM recovery and blank/LOQ. An expert-review-ready flag additionally requires independent held-out Fe/K models, 8+3 training sensitivity and separately collected field-sample duplicates. This does NOT certify lab accreditation, representative field sampling, plant grade or scale-up.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticAnalyticalQCRows) { field in
