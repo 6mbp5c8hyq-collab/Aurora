@@ -234,6 +234,36 @@ struct ResultsWorkspaceView: View {
         }.prefix(45))
     }
 
+    private var magneticTextureRows: [GovernedResultRow] {
+        // Source-backed sample evidence, no extrapolation or device prediction.
+        let fields = Set([
+            "revision", "status", "ok", "reason", "claim_ceiling",
+            "qualified_for_texture_domain_expert_review",
+            "within_measured_training_texture_domain",
+            "measured_training_campaigns", "independent_validation_campaigns",
+            "target_ore_lot_id", "target_sub_lot_id", "target_sample_id",
+            "target_report_id", "target_nearest_normalized_distance",
+            "maximum_normalized_nearest_train_distance",
+            "new_ore_lot_transfer_authorized", "industrial_scaleup_authorized",
+            "mineralogy_measurement_certified",
+            "sampling_representativity_verified",
+            "predicted_oxide_grade_adjustment_pct_points",
+            "texture_domain_screen_passed", "role", "feature",
+            "observed", "training_min", "training_max"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_texture_domain.")
+                || path.contains(".magnetic_pilot_texture_domain.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key)
+                || path.contains(".training_feature_envelopes.")
+                || path.contains(".screened_intra_lot_sub_lots.")
+        }.prefix(62))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -304,6 +334,7 @@ struct ResultsWorkspaceView: View {
                 magneticStabilityPanel
                 magneticAnalyticalQCPanel
                 magneticFieldSamplingPanel
+                magneticTextureDomainPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -540,6 +571,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticFieldSamplingRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticTextureDomainPanel: some View {
+        if !magneticTextureRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Magnetic Feed PSD & Liberation Domain", systemImage: "circle.hexagongrid")
+                        .font(.headline)
+                    Text("Screens directly reported post-screen magnetic-feed D10/D50/D90, glauconite and Fe-phase liberation, and multiple sub-lots of the same ore lot. New ore lots or unmeasured feature combinations remain HOLD. This does not predict causal grade corrections, mineral sampling representativity, or industrial performance.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticTextureRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
