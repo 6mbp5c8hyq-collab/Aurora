@@ -147,6 +147,31 @@ struct ResultsWorkspaceView: View {
         }.prefix(50))
     }
 
+    private var magneticStabilityRows: [GovernedResultRow] {
+        // Leave-one-interior-training-batch-out influence is NOT a
+        // statistical confidence interval or industrial verification.
+        let fields = Set([
+            "revision", "status", "ok", "reason",
+            "stability_demonstrated", "tested_training_batch_removals",
+            "training_count_original", "validation_count_unchanged",
+            "train_count", "validation_count",
+            "grade_drift_limit_pct_points", "partition_drift_limit_pct_points",
+            "pilot_sensitivity_screen_only", "not_statistical_confidence_interval",
+            "industrial_scaleup_authorized", "independent_laboratory_verified",
+            "claim_ceiling"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_deletion_stability.")
+                || path.contains(".magnetic_pilot_deletion_stability.") else {
+                return false
+            }
+            let name = String(path.split(separator: ".").last ?? "")
+            return fields.contains(name)
+                || path.contains(".max_abs_single_train_removal_change.")
+        }.prefix(45))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -214,6 +239,7 @@ struct ResultsWorkspaceView: View {
                 dryOxideFeasibilityPanel
                 fourStreamAssayPanel
                 magneticCalibrationPanel
+                magneticStabilityPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -366,6 +392,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticCalibrationRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticStabilityPanel: some View {
+        if !magneticStabilityRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Fe/K Pilot Training Sensitivity", systemImage: "arrow.triangle.branch")
+                        .font(.headline)
+                    Text("Deletes each interior training setpoint and refits both Fe2O3 and K2O with unchanged holdouts. Requires at least eight independent train settings and three holdouts. Absence of testwork or excessive one-batch influence remains HOLD. This is neither a statistical prediction interval nor an industrial performance guarantee.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticStabilityRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
