@@ -73,11 +73,306 @@ struct ResultsWorkspaceView: View {
 
     private var activeProject: AuroraProject? { projects.first }
 
+    private var dryOxideFeasibilityRows: [GovernedResultRow] {
+        // The canonical engineering audit may include several exclusive
+        // routes. Report only returned chemistry bounds; do not derive
+        // imaginary assays from the assumed solids yield.
+        Array(rows.filter { row in
+            let path = row.path.lowercased()
+            return path.hasPrefix("dry_pretreatment_oxide_feasibility.")
+                || path.contains(".dry_pretreatment_oxide_feasibility.")
+        }.prefix(100))
+    }
+
+    private var fourStreamAssayRows: [GovernedResultRow] {
+        // Read canonical upstream outputs only, with no client-side grade
+        // reconstruction. Missing sample evidence remains an explicit HOLD.
+        Array(rows.filter { row in
+            let path = row.path.lowercased()
+            return path.hasPrefix("four_stream_assay_reconciliation.")
+                || path.contains(".four_stream_assay_reconciliation.")
+        }.prefix(80))
+    }
+
+    private var magneticCalibrationRows: [GovernedResultRow] {
+        // Pilot readiness and experimental prediction are different authority
+        // stages. Display returned values only; never infer missing plant data.
+        // Show source-backed readiness fields, never populate missing testwork.
+        let keys = Set([
+            "status", "revision", "authority", "claim_ceiling",
+            "magnetic_collected_stream_role", "desired_product_stream",
+            "screen_reject_subtracted_from_magnetic_feed",
+            "model_training_rows", "model_validation_rows",
+            "pilot_campaigns_accepted", "target_local_gap_fraction",
+            "maximum_two_product_closure_error_pct_points",
+            "training_rows_export_authorized", "plant_model_release_authorized",
+            "train_batch_ids", "validation_batch_ids", "required_inputs",
+            "pilot_dataset_status", "predicted_magnetic_setting_tesla",
+            "predicted_nonmagnetic_fe2o3_grade_pct",
+            "predicted_magnetic_fe2o3_reject_grade_pct",
+            "predicted_magnetic_reject_mass_fraction_pct",
+            "predicted_fe2o3_partition_to_magnetic_reject_pct",
+            "plant_process_release_authorized", "validated_by_independent_lab",
+            "plant_grade_or_throughput_certified",
+            "predicted_industrial_tph", "predicted_k2o_grade_pct",
+            "prediction_confidence_interval_pct",
+            "predicted_nonmagnetic_k2o_grade_pct",
+            "predicted_magnetic_reject_k2o_grade_pct",
+            "predicted_magnetic_reject_fe2o3_grade_pct",
+            "predicted_magnetic_reject_mass_yield_pct",
+            "predicted_fe2o3_rejection_to_magnetic_pct",
+            "predicted_k2o_retention_in_nonmagnetic_product_pct",
+            "independently_laboratory_accredited",
+            "plant_scale_prediction_authorized",
+            "plant_treated_product_tph",
+            "confidence_interval_for_grade_pct",
+            "chemical_activation_modeled"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_calibration_readiness.")
+                || path.contains(".magnetic_calibration_readiness.")
+                || path.hasPrefix("magnetic_pilot_heldout_prediction.")
+                || path.contains(".magnetic_pilot_heldout_prediction.")
+                || path.hasPrefix("magnetic_pilot_dual_oxide_prediction.")
+                || path.contains(".magnetic_pilot_dual_oxide_prediction.") else {
+                return false
+            }
+            let parts = path.split(separator: ".")
+            let field = String(parts.last ?? "")
+            return keys.contains(field)
+                || path.contains(".required_inputs.")
+                || path.contains(".train_batch_ids.")
+                || path.contains(".validation_batch_ids.")
+        }.prefix(50))
+    }
+
+    private var magneticStabilityRows: [GovernedResultRow] {
+        // Leave-one-interior-training-batch-out influence is NOT a
+        // statistical confidence interval or industrial verification.
+        let fields = Set([
+            "revision", "status", "ok", "reason",
+            "stability_demonstrated", "tested_training_batch_removals",
+            "training_count_original", "validation_count_unchanged",
+            "train_count", "validation_count",
+            "grade_drift_limit_pct_points", "partition_drift_limit_pct_points",
+            "pilot_sensitivity_screen_only", "not_statistical_confidence_interval",
+            "industrial_scaleup_authorized", "independent_laboratory_verified",
+            "claim_ceiling"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_deletion_stability.")
+                || path.contains(".magnetic_pilot_deletion_stability.") else {
+                return false
+            }
+            let name = String(path.split(separator: ".").last ?? "")
+            return fields.contains(name)
+                || path.contains(".max_abs_single_train_removal_change.")
+        }.prefix(45))
+    }
+
+    private var magneticAnalyticalQCRows: [GovernedResultRow] {
+        // Traceable analytical repeatability and reported CRM/blank checks are
+        // NOT independent sample-representativity or laboratory accreditation.
+        let fields = Set([
+            "revision", "status", "reason", "ok",
+            "qualified_campaigns", "independent_repeat_analyses",
+            "pilot_analytical_precision_screen_passed",
+            "accredited_lab_or_certified_sampling_verified",
+            "plant_grade_release_authorized",
+            "ready_for_expert_review_only",
+            "dual_fe_k_heldout_passed", "batch_deletion_screen_passed",
+            "analytical_qc_screen_passed",
+            "field_sampling_qc_screen_passed",
+            "field_sampling_representativity_verified",
+            "source_report_credibility_independently_verified",
+            "full_scale_magnetic_design_authorized",
+            "industrial_grade_or_recovery_certified", "claim_ceiling",
+            "failed_campaign_index", "failed_campaign_id"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_analytical_qc.")
+                || path.contains(".magnetic_pilot_analytical_qc.")
+                || path.hasPrefix("magnetic_pilot_review_screen.")
+                || path.contains(".magnetic_pilot_review_screen.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key)
+                || path.contains(".max_repeat_rpd_pct.")
+                || path.contains(".min_reference_recovery_pct.")
+                || path.contains(".max_reference_recovery_pct.")
+                || path.contains(".max_blank_to_loq_ratio.")
+        }.prefix(45))
+    }
+
+    private var magneticFieldSamplingRows: [GovernedResultRow] {
+        // Independent FIELD increments are distinct from repeated analytical
+        // aliquots of one homogenized sample; neither proves representativity.
+        let fields = Set([
+            "revision", "status", "ok", "reason", "claim_ceiling",
+            "field_duplicate_screen_passed", "qualified_campaigns",
+            "examined_field_sample_pairs",
+            "maximum_field_duplicate_rpd_policy_pct",
+            "minimum_grade_to_loq_ratio_for_rpd",
+            "sampling_representativity_verified",
+            "independent_source_authentication",
+            "plant_design_authorized", "failed_campaign_index",
+            "failed_location", "failed_oxide"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_field_sampling_qc.")
+                || path.contains(".magnetic_pilot_field_sampling_qc.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key) ||
+                path.contains(".max_field_duplicate_rpd_pct.")
+        }.prefix(45))
+    }
+
+    private var magneticTextureRows: [GovernedResultRow] {
+        // Source-backed sample evidence, no extrapolation or device prediction.
+        let fields = Set([
+            "revision", "status", "ok", "reason", "claim_ceiling",
+            "qualified_for_texture_domain_expert_review",
+            "within_measured_training_texture_domain",
+            "measured_training_campaigns", "independent_validation_campaigns",
+            "target_ore_lot_id", "target_sub_lot_id", "target_sample_id",
+            "target_report_id", "target_nearest_normalized_distance",
+            "maximum_normalized_nearest_train_distance",
+            "new_ore_lot_transfer_authorized", "industrial_scaleup_authorized",
+            "mineralogy_measurement_certified",
+            "sampling_representativity_verified",
+            "predicted_oxide_grade_adjustment_pct_points",
+            "texture_domain_screen_passed", "role", "feature",
+            "observed", "training_min", "training_max"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_texture_domain.")
+                || path.contains(".magnetic_pilot_texture_domain.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key)
+                || path.contains(".training_feature_envelopes.")
+                || path.contains(".screened_intra_lot_sub_lots.")
+        }.prefix(62))
+    }
+
+    private var magneticMultifactorRows: [GovernedResultRow] {
+        // Repeated magnetic fields across independent PSD/liberation pilot
+        // trials belong to a separate experiment, not the 1D model.
+        let fields = Set([
+            "revision", "status", "ok", "reason", "claim_ceiling",
+            "measured_train_campaigns", "independent_holdout_campaigns",
+            "new_condition_holdout_campaigns", "new_condition_holdout_required",
+            "new_condition_validation_count", "required_new_condition_validations",
+            "new_condition_design_distance_floor",
+            "maximum_nearest_same_sublot_design_distance",
+            "target_nearest_same_sublot_design_distance",
+            "maximum_per_sublot_holdout_rmse_pct_points",
+            "failed_sublot",
+            "design_matrix_columns", "condition_proxy",
+            "causal_effect_established", "independent_lab_verified",
+            "plant_scale_release_authorized",
+            "confidence_interval_available", "industrial_mass_flow_tph",
+            "texture_status", "analytical_status", "field_status",
+            "campaign_id", "factor", "failed_response"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_multifactor_pilot_calibration.")
+                || path.contains(".magnetic_multifactor_pilot_calibration.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key)
+                || path.contains(".multifactor_testwork_prediction.")
+                || path.contains(".independent_validation.")
+                || path.contains(".independent_validation_by_sublot.")
+                || path.contains(".per_sublot_validation.")
+                || path.contains(".input_feature_ranges.")
+        }.prefix(70))
+    }
+
+    private var glauconiteEngineeringRows: [GovernedResultRow] {
+        let focus = Set([
+            "status", "current_fresh_feed_tph", "current_treated_product_tph",
+            "optimistic_minimum_fresh_feed_tph", "design_capacity_lower_bound_tph",
+            "shortfall_equipment_count", "design_factor",
+            "inlet_minimum_feed_increase_vs_current_pct",
+            "project_operating_power_kw_total", "specific_energy_kwh_per_t_treated",
+            "fresh_water_makeup_m3_h", "specific_fresh_water_m3_per_t_treated",
+            "cost_per_t_treated", "utility_cost_per_hour",
+            "ready_for_total_opex", "ready_for_vendor_procurement"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("glauconite_capacity_utility_screen.")
+                || path.contains(".glauconite_capacity_utility_screen.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return focus.contains(key)
+        }.prefix(54))
+    }
+
+    // Only facts already returned by the canonical backend are shown.
+    // No client-side prediction, inferred validation pass or synthetic metric.
+    private var predictiveEvidenceRows: [GovernedResultRow] {
+        let names = [
+            "measured_tail_assay_count",
+            "max_measured_balance_error_pct_points",
+            "component_balance_tolerance_pct_points",
+            "holdout_rmse_pct_points",
+            "holdout_max_abs_error_pct_points",
+            "holdout_signed_bias_pct_points",
+            "target_gap_fraction",
+            "maximum_interpolation_gap_fraction",
+            "all_rows_have_measured_tail_assays",
+            "require_measured_tail_assay",
+            "validation_rmse_pct_points",
+            "validation_mae_pct_points",
+            "holdout_acceptance_rmse_pct_points",
+            "validation_level",
+            "claim_ceiling"
+        ]
+        let available = rows
+        guard available.contains(where: { row in
+            let key = row.path.lowercased()
+            return key.contains("measured_tail_assay_count")
+                || key.contains("holdout_rmse_pct_points")
+                || key.contains("validation_rmse_pct_points")
+        }) else { return [] }
+        return Array(available.filter { row in
+            let key = row.path.lowercased()
+            return names.contains { name in
+                key == name || key.hasSuffix("." + name)
+                    || key.contains("." + name + ".")
+            }
+        }.prefix(25))
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 hero
                 ScientificValidationAggregateBanner(result: app.activeResult)
+                predictiveEvidencePanel
+                dryOxideFeasibilityPanel
+                fourStreamAssayPanel
+                magneticCalibrationPanel
+                magneticStabilityPanel
+                magneticAnalyticalQCPanel
+                magneticFieldSamplingPanel
+                magneticTextureDomainPanel
+                magneticMultifactorPanel
+                glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
                 semanticDistribution
@@ -123,6 +418,292 @@ struct ResultsWorkspaceView: View {
                 VStack(alignment: .trailing, spacing: 6) {
                     StatusBadge(text: app.activeResult == nil ? "No active result" : ResultTools.status(app.activeResult))
                     Text(app.activeResultOrigin).font(.caption2.monospaced()).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var predictiveEvidencePanel: some View {
+        if !predictiveEvidenceRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Label("Predictive Testwork Evidence", systemImage: "checkmark.shield")
+                            .font(.headline)
+                        Spacer()
+                        Text("\(predictiveEvidenceRows.count) returned fields")
+                            .font(.caption.monospaced())
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Measured closure, local calibration support, holdout errors and claim limitations are shown verbatim from the canonical server. Missing measurements are never inferred; a successful software test is not plant validation.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(predictiveEvidenceRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var dryOxideFeasibilityPanel: some View {
+        if !dryOxideFeasibilityRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Dry Glauconite Oxide Feasibility", systemImage: "atom")
+                        .font(.headline)
+                    Text("Conservation-only screen at the treated dry-product boundary before NPK additions and suspension water. A missing-assay HOLD or a theoretical bound cannot be treated as a verified product grade.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(dryOxideFeasibilityRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var fourStreamAssayPanel: some View {
+        if !fourStreamAssayRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Glauconite Four-Stream Fe/K Assay Audit", systemImage: "checkmark.shield")
+                        .font(.headline)
+                    Text("Source-declared feed, screen reject, magnetic reject and product dry-basis assays are reconciled separately. Scenario-calculated dry flows are NOT laboratory flow measurements; a numerical closure pass is not a plant or assay certificate.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(fourStreamAssayRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticCalibrationPanel: some View {
+        if !magneticCalibrationRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Magnetic Pilot & Held-Out Fe/K Validation", systemImage: "waveform.path.ecg")
+                        .font(.headline)
+                    Text("Magnetic feed is ROM minus screen rejection. Fe-rich collected concentrate is rejected; the nonmagnetic stream is the proposed K-bearing product. Any Fe2O3 or K2O result requires separately held-out assay models. Values are provisional pilot interpolations—not certified grades, scale-up throughput, confidence intervals, activation performance, or plant release.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticCalibrationRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticStabilityPanel: some View {
+        if !magneticStabilityRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Fe/K Pilot Training Sensitivity", systemImage: "arrow.triangle.branch")
+                        .font(.headline)
+                    Text("Deletes each interior training setpoint and refits both Fe2O3 and K2O with unchanged holdouts. Requires at least eight independent train settings and three holdouts. Absence of testwork or excessive one-batch influence remains HOLD. This is neither a statistical prediction interval nor an industrial performance guarantee.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticStabilityRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticAnalyticalQCPanel: some View {
+        if !magneticAnalyticalQCRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Pilot Fe/K Analytical QC", systemImage: "checkmark.shield")
+                        .font(.headline)
+                    Text("Analytical repeatability requires independent aliquots, reference recovery and blank/LOQ. Expert-review eligibility also requires separate held-out Fe/K models, 8+3 batch sensitivity, independent field increments and measured post-screen PSD/liberation domain support. Neither laboratory accreditation nor industrial performance is certified.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticAnalyticalQCRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticFieldSamplingPanel: some View {
+        if !magneticFieldSamplingRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Fe/K Independent Field Sampling QC", systemImage: "square.stack.3d.up")
+                        .font(.headline)
+                    Text("Requires separate field increments at feed, screen reject, magnetic reject and product composite, with unique collection events, comparable dry Fe2O3/K2O assays and declared RPD/LOQ limits. Field duplicates are NOT repeat lab aliquots. Passing neither proves representative sampling nor industrial performance.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticFieldSamplingRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticTextureDomainPanel: some View {
+        if !magneticTextureRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Magnetic Feed PSD & Liberation Domain", systemImage: "circle.hexagongrid")
+                        .font(.headline)
+                    Text("Screens directly reported post-screen magnetic-feed D10/D50/D90, glauconite and Fe-phase liberation, and multiple sub-lots of the same ore lot. New ore lots or unmeasured feature combinations remain HOLD. This does not predict causal grade corrections, mineral sampling representativity, or industrial performance.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticTextureRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticMultifactorPanel: some View {
+        if !magneticMultifactorRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Multifactor Magnetic Pilot Validation", systemImage: "chart.xyaxis.line")
+                        .font(.headline)
+                    Text("Reports only backend-verified Fe/K pilot associations with new-condition holdouts, independent per-sublot RMSE, local combined B/PSD/liberation support and physical mass closure. Repeat runs alone cannot establish interpolation. Without laboratory evidence, results remain HOLD; no causal or commercial performance is certified.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticMultifactorRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var glauconiteEngineeringPanel: some View {
+        if !glauconiteEngineeringRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Glauconite Capacity & Utility Readiness", systemImage: "bolt.shield")
+                        .font(.headline)
+                    Text("Displays canonical Phase B/I/K evidence and conservative capacity bounds only. Preliminary GA capacities are not vendor certificates; no electricity, water or OPEX value is inferred when an input is missing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(glauconiteEngineeringRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
                 }
             }
         }
