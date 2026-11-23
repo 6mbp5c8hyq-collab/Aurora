@@ -264,6 +264,33 @@ struct ResultsWorkspaceView: View {
         }.prefix(62))
     }
 
+    private var magneticMultifactorRows: [GovernedResultRow] {
+        // Repeated magnetic fields across independent PSD/liberation pilot
+        // trials belong to a separate experiment, not the 1D model.
+        let fields = Set([
+            "revision", "status", "ok", "reason", "claim_ceiling",
+            "measured_train_campaigns", "independent_holdout_campaigns",
+            "design_matrix_columns", "condition_proxy",
+            "causal_effect_established", "independent_lab_verified",
+            "plant_scale_release_authorized",
+            "confidence_interval_available", "industrial_mass_flow_tph",
+            "texture_status", "analytical_status", "field_status",
+            "campaign_id", "factor", "failed_response"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_multifactor_pilot_calibration.")
+                || path.contains(".magnetic_multifactor_pilot_calibration.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key)
+                || path.contains(".multifactor_testwork_prediction.")
+                || path.contains(".independent_validation.")
+                || path.contains(".input_feature_ranges.")
+        }.prefix(70))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -335,6 +362,7 @@ struct ResultsWorkspaceView: View {
                 magneticAnalyticalQCPanel
                 magneticFieldSamplingPanel
                 magneticTextureDomainPanel
+                magneticMultifactorPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -599,6 +627,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticTextureRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticMultifactorPanel: some View {
+        if !magneticMultifactorRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Multifactor Magnetic Pilot Validation", systemImage: "chart.xyaxis.line")
+                        .font(.headline)
+                    Text("Independent designed pilot runs may repeat magnetic field levels while measuring PSD and liberation variation. This panel displays backend Fe/K magnetic partition, shared mass pull and held-out fit diagnostics ONLY when measured source and QA gates pass. Coefficients are pilot associations, not proven causal effects, confidence intervals or industrial recovery guarantees.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticMultifactorRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
