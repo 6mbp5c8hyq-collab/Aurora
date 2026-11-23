@@ -84,6 +84,28 @@ struct ResultsWorkspaceView: View {
         }.prefix(100))
     }
 
+    private var glauconiteEngineeringRows: [GovernedResultRow] {
+        let focus = Set([
+            "status", "current_fresh_feed_tph", "current_treated_product_tph",
+            "optimistic_minimum_fresh_feed_tph", "design_capacity_lower_bound_tph",
+            "shortfall_equipment_count", "design_factor",
+            "inlet_minimum_feed_increase_vs_current_pct",
+            "project_operating_power_kw_total", "specific_energy_kwh_per_t_treated",
+            "fresh_water_makeup_m3_h", "specific_fresh_water_m3_per_t_treated",
+            "cost_per_t_treated", "utility_cost_per_hour",
+            "ready_for_total_opex", "ready_for_vendor_procurement"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("glauconite_capacity_utility_screen.")
+                || path.contains(".glauconite_capacity_utility_screen.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return focus.contains(key)
+        }.prefix(54))
+    }
+
     // Only facts already returned by the canonical backend are shown.
     // No client-side prediction, inferred validation pass or synthetic metric.
     private var predictiveEvidenceRows: [GovernedResultRow] {
@@ -127,6 +149,7 @@ struct ResultsWorkspaceView: View {
                 ScientificValidationAggregateBanner(result: app.activeResult)
                 predictiveEvidencePanel
                 dryOxideFeasibilityPanel
+                glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
                 semanticDistribution
@@ -222,6 +245,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(dryOxideFeasibilityRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var glauconiteEngineeringPanel: some View {
+        if !glauconiteEngineeringRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Glauconite Capacity & Utility Readiness", systemImage: "bolt.shield")
+                        .font(.headline)
+                    Text("Displays canonical Phase B/I/K evidence and conservative capacity bounds only. Preliminary GA capacities are not vendor certificates; no electricity, water or OPEX value is inferred when an input is missing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(glauconiteEngineeringRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
