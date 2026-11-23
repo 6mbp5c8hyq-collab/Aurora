@@ -206,6 +206,32 @@ struct ResultsWorkspaceView: View {
         }.prefix(45))
     }
 
+    private var magneticFieldSamplingRows: [GovernedResultRow] {
+        // Independent FIELD increments are distinct from repeated analytical
+        // aliquots of one homogenized sample; neither proves representativity.
+        let fields = Set([
+            "revision", "status", "ok", "reason", "claim_ceiling",
+            "field_duplicate_screen_passed", "qualified_campaigns",
+            "examined_field_sample_pairs",
+            "maximum_field_duplicate_rpd_policy_pct",
+            "minimum_grade_to_loq_ratio_for_rpd",
+            "sampling_representativity_verified",
+            "independent_source_authentication",
+            "plant_design_authorized", "failed_campaign_index",
+            "failed_location", "failed_oxide"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_field_sampling_qc.")
+                || path.contains(".magnetic_pilot_field_sampling_qc.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key) ||
+                path.contains(".max_field_duplicate_rpd_pct.")
+        }.prefix(45))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -275,6 +301,7 @@ struct ResultsWorkspaceView: View {
                 magneticCalibrationPanel
                 magneticStabilityPanel
                 magneticAnalyticalQCPanel
+                magneticFieldSamplingPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -483,6 +510,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticAnalyticalQCRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticFieldSamplingPanel: some View {
+        if !magneticFieldSamplingRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Fe/K Independent Field Sampling QC", systemImage: "square.stack.3d.up")
+                        .font(.headline)
+                    Text("Requires separate field increments at feed, screen reject, magnetic reject and product composite, with unique collection events, comparable dry Fe2O3/K2O assays and declared RPD/LOQ limits. Field duplicates are NOT repeat lab aliquots. Passing neither proves representative sampling nor industrial performance.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticFieldSamplingRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
