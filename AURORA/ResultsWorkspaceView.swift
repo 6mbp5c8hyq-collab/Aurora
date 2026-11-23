@@ -172,6 +172,40 @@ struct ResultsWorkspaceView: View {
         }.prefix(45))
     }
 
+    private var magneticAnalyticalQCRows: [GovernedResultRow] {
+        // Traceable analytical repeatability and reported CRM/blank checks are
+        // NOT independent sample-representativity or laboratory accreditation.
+        let fields = Set([
+            "revision", "status", "reason", "ok",
+            "qualified_campaigns", "independent_repeat_analyses",
+            "pilot_analytical_precision_screen_passed",
+            "accredited_lab_or_certified_sampling_verified",
+            "plant_grade_release_authorized",
+            "ready_for_expert_review_only",
+            "dual_fe_k_heldout_passed", "batch_deletion_screen_passed",
+            "analytical_qc_screen_passed",
+            "source_report_credibility_independently_verified",
+            "full_scale_magnetic_design_authorized",
+            "industrial_grade_or_recovery_certified", "claim_ceiling",
+            "failed_campaign_index", "failed_campaign_id"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_pilot_analytical_qc.")
+                || path.contains(".magnetic_pilot_analytical_qc.")
+                || path.hasPrefix("magnetic_pilot_review_screen.")
+                || path.contains(".magnetic_pilot_review_screen.") else {
+                return false
+            }
+            let key = String(path.split(separator: ".").last ?? "")
+            return fields.contains(key)
+                || path.contains(".max_repeat_rpd_pct.")
+                || path.contains(".min_reference_recovery_pct.")
+                || path.contains(".max_reference_recovery_pct.")
+                || path.contains(".max_blank_to_loq_ratio.")
+        }.prefix(45))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -240,6 +274,7 @@ struct ResultsWorkspaceView: View {
                 fourStreamAssayPanel
                 magneticCalibrationPanel
                 magneticStabilityPanel
+                magneticAnalyticalQCPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -420,6 +455,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticStabilityRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticAnalyticalQCPanel: some View {
+        if !magneticAnalyticalQCRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Pilot Fe/K Analytical QC", systemImage: "checkmark.shield")
+                        .font(.headline)
+                    Text("Screens Fe2O3/K2O paired dry-sample analyses, CRM recovery and analytical blank/LOQ evidence. An expert-review-ready flag also requires two held-out oxide models and 8+3 training sensitivity. This does NOT certify lab accreditation, field sample representativity, plant grade or scale-up.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticAnalyticalQCRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
