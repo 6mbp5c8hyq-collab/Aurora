@@ -95,7 +95,8 @@ struct ResultsWorkspaceView: View {
     }
 
     private var magneticCalibrationRows: [GovernedResultRow] {
-        // Scientific model handoff is not a prediction or a plant release.
+        // Pilot readiness and experimental prediction are different authority
+        // stages. Display returned values only; never infer missing plant data.
         // Show source-backed readiness fields, never populate missing testwork.
         let keys = Set([
             "status", "revision", "authority", "claim_ceiling",
@@ -105,12 +106,23 @@ struct ResultsWorkspaceView: View {
             "pilot_campaigns_accepted", "target_local_gap_fraction",
             "maximum_two_product_closure_error_pct_points",
             "training_rows_export_authorized", "plant_model_release_authorized",
-            "train_batch_ids", "validation_batch_ids", "required_inputs"
+            "train_batch_ids", "validation_batch_ids", "required_inputs",
+            "pilot_dataset_status", "predicted_magnetic_setting_tesla",
+            "predicted_nonmagnetic_fe2o3_grade_pct",
+            "predicted_magnetic_fe2o3_reject_grade_pct",
+            "predicted_magnetic_reject_mass_fraction_pct",
+            "predicted_fe2o3_partition_to_magnetic_reject_pct",
+            "plant_process_release_authorized", "validated_by_independent_lab",
+            "plant_grade_or_throughput_certified",
+            "predicted_industrial_tph", "predicted_k2o_grade_pct",
+            "prediction_confidence_interval_pct"
         ])
         return Array(rows.filter { row in
             let path = row.path.lowercased()
             guard path.hasPrefix("magnetic_calibration_readiness.")
-                || path.contains(".magnetic_calibration_readiness.") else {
+                || path.contains(".magnetic_calibration_readiness.")
+                || path.hasPrefix("magnetic_pilot_heldout_prediction.")
+                || path.contains(".magnetic_pilot_heldout_prediction.") else {
                 return false
             }
             let parts = path.split(separator: ".")
@@ -335,9 +347,9 @@ struct ResultsWorkspaceView: View {
         if !magneticCalibrationRows.isEmpty {
             AuroraCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Magnetic Pilot Calibration Readiness", systemImage: "waveform.path.ecg")
+                    Label("Magnetic Pilot & Held-Out Fe Validation", systemImage: "waveform.path.ecg")
                         .font(.headline)
-                    Text("The magnetic feed is ROM minus screened reject. Fe-rich magnetic concentrate is the reject; the nonmagnetic fraction is the intended K-bearing product. A dataset-ready status is not a validated prediction, equipment rating, or plant release.")
+                    Text("Magnetic feed is ROM minus screen rejection. Fe-rich magnetic concentrate is rejected; the nonmagnetic fraction is the K-bearing product candidate. Displayed Fe2O3 interpolation is provisional batch testwork only, NOT a certified K2O grade, full-scale throughput, confidence interval or plant release.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticCalibrationRows) { field in
