@@ -270,6 +270,13 @@ struct ResultsWorkspaceView: View {
         let fields = Set([
             "revision", "status", "ok", "reason", "claim_ceiling",
             "measured_train_campaigns", "independent_holdout_campaigns",
+            "new_condition_holdout_campaigns", "new_condition_holdout_required",
+            "new_condition_validation_count", "required_new_condition_validations",
+            "new_condition_design_distance_floor",
+            "maximum_nearest_same_sublot_design_distance",
+            "target_nearest_same_sublot_design_distance",
+            "maximum_per_sublot_holdout_rmse_pct_points",
+            "failed_sublot",
             "design_matrix_columns", "condition_proxy",
             "causal_effect_established", "independent_lab_verified",
             "plant_scale_release_authorized",
@@ -287,6 +294,8 @@ struct ResultsWorkspaceView: View {
             return fields.contains(key)
                 || path.contains(".multifactor_testwork_prediction.")
                 || path.contains(".independent_validation.")
+                || path.contains(".independent_validation_by_sublot.")
+                || path.contains(".per_sublot_validation.")
                 || path.contains(".input_feature_ranges.")
         }.prefix(70))
     }
@@ -651,7 +660,7 @@ struct ResultsWorkspaceView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Label("Multifactor Magnetic Pilot Validation", systemImage: "chart.xyaxis.line")
                         .font(.headline)
-                    Text("Independent designed pilot runs may repeat magnetic field levels while measuring PSD and liberation variation. This panel displays backend Fe/K magnetic partition, shared mass pull and held-out fit diagnostics ONLY when measured source and QA gates pass. Coefficients are pilot associations, not proven causal effects, confidence intervals or industrial recovery guarantees.")
+                    Text("Reports only backend-verified Fe/K pilot associations with new-condition holdouts, independent per-sublot RMSE, local combined B/PSD/liberation support and physical mass closure. Repeat runs alone cannot establish interpolation. Without laboratory evidence, results remain HOLD; no causal or commercial performance is certified.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticMultifactorRows) { field in
