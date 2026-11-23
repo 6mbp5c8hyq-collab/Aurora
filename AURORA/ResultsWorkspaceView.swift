@@ -94,6 +94,34 @@ struct ResultsWorkspaceView: View {
         }.prefix(80))
     }
 
+    private var magneticCalibrationRows: [GovernedResultRow] {
+        // Scientific model handoff is not a prediction or a plant release.
+        // Show source-backed readiness fields, never populate missing testwork.
+        let keys = Set([
+            "status", "revision", "authority", "claim_ceiling",
+            "magnetic_collected_stream_role", "desired_product_stream",
+            "screen_reject_subtracted_from_magnetic_feed",
+            "model_training_rows", "model_validation_rows",
+            "pilot_campaigns_accepted", "target_local_gap_fraction",
+            "maximum_two_product_closure_error_pct_points",
+            "training_rows_export_authorized", "plant_model_release_authorized",
+            "train_batch_ids", "validation_batch_ids", "required_inputs"
+        ])
+        return Array(rows.filter { row in
+            let path = row.path.lowercased()
+            guard path.hasPrefix("magnetic_calibration_readiness.")
+                || path.contains(".magnetic_calibration_readiness.") else {
+                return false
+            }
+            let parts = path.split(separator: ".")
+            let field = String(parts.last ?? "")
+            return keys.contains(field)
+                || path.contains(".required_inputs.")
+                || path.contains(".train_batch_ids.")
+                || path.contains(".validation_batch_ids.")
+        }.prefix(50))
+    }
+
     private var glauconiteEngineeringRows: [GovernedResultRow] {
         let focus = Set([
             "status", "current_fresh_feed_tph", "current_treated_product_tph",
@@ -160,6 +188,7 @@ struct ResultsWorkspaceView: View {
                 predictiveEvidencePanel
                 dryOxideFeasibilityPanel
                 fourStreamAssayPanel
+                magneticCalibrationPanel
                 glauconiteEngineeringPanel
                 filterPanel
                 summaryGrid
@@ -284,6 +313,34 @@ struct ResultsWorkspaceView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(fourStreamAssayRows) { field in
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(field.path)
+                                .font(.caption2.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Text(field.value)
+                                .font(.caption.monospaced())
+                                .textSelection(.enabled)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Divider().opacity(0.07)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var magneticCalibrationPanel: some View {
+        if !magneticCalibrationRows.isEmpty {
+            AuroraCard {
+                VStack(alignment: .leading, spacing: 10) {
+                    Label("Magnetic Pilot Calibration Readiness", systemImage: "waveform.path.ecg")
+                        .font(.headline)
+                    Text("The magnetic feed is ROM minus screened reject. Fe-rich magnetic concentrate is the reject; the nonmagnetic fraction is the intended K-bearing product. A dataset-ready status is not a validated prediction, equipment rating, or plant release.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(magneticCalibrationRows) { field in
                         VStack(alignment: .leading, spacing: 3) {
                             Text(field.path)
                                 .font(.caption2.monospaced())
