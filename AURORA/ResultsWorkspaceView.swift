@@ -115,14 +115,27 @@ struct ResultsWorkspaceView: View {
             "plant_process_release_authorized", "validated_by_independent_lab",
             "plant_grade_or_throughput_certified",
             "predicted_industrial_tph", "predicted_k2o_grade_pct",
-            "prediction_confidence_interval_pct"
+            "prediction_confidence_interval_pct",
+            "predicted_nonmagnetic_k2o_grade_pct",
+            "predicted_magnetic_reject_k2o_grade_pct",
+            "predicted_magnetic_reject_fe2o3_grade_pct",
+            "predicted_magnetic_reject_mass_yield_pct",
+            "predicted_fe2o3_rejection_to_magnetic_pct",
+            "predicted_k2o_retention_in_nonmagnetic_product_pct",
+            "independently_laboratory_accredited",
+            "plant_scale_prediction_authorized",
+            "plant_treated_product_tph",
+            "confidence_interval_for_grade_pct",
+            "chemical_activation_modeled"
         ])
         return Array(rows.filter { row in
             let path = row.path.lowercased()
             guard path.hasPrefix("magnetic_calibration_readiness.")
                 || path.contains(".magnetic_calibration_readiness.")
                 || path.hasPrefix("magnetic_pilot_heldout_prediction.")
-                || path.contains(".magnetic_pilot_heldout_prediction.") else {
+                || path.contains(".magnetic_pilot_heldout_prediction.")
+                || path.hasPrefix("magnetic_pilot_dual_oxide_prediction.")
+                || path.contains(".magnetic_pilot_dual_oxide_prediction.") else {
                 return false
             }
             let parts = path.split(separator: ".")
@@ -347,9 +360,9 @@ struct ResultsWorkspaceView: View {
         if !magneticCalibrationRows.isEmpty {
             AuroraCard {
                 VStack(alignment: .leading, spacing: 10) {
-                    Label("Magnetic Pilot & Held-Out Fe Validation", systemImage: "waveform.path.ecg")
+                    Label("Magnetic Pilot & Held-Out Fe/K Validation", systemImage: "waveform.path.ecg")
                         .font(.headline)
-                    Text("Magnetic feed is ROM minus screen rejection. Fe-rich magnetic concentrate is rejected; the nonmagnetic fraction is the K-bearing product candidate. Displayed Fe2O3 interpolation is provisional batch testwork only, NOT a certified K2O grade, full-scale throughput, confidence interval or plant release.")
+                    Text("Magnetic feed is ROM minus screen rejection. Fe-rich collected concentrate is rejected; the nonmagnetic stream is the proposed K-bearing product. Any Fe2O3 or K2O result requires separately held-out assay models. Values are provisional pilot interpolations—not certified grades, scale-up throughput, confidence intervals, activation performance, or plant release.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                     ForEach(magneticCalibrationRows) { field in
